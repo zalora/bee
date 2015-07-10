@@ -438,10 +438,17 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 				para.DataType = pp[len(pp)-1]
 				if len(p) > 4 {
 					para.Required, _ = strconv.ParseBool(p[3])
-					para.Description = p[4]
+					if "enum" == strings.ToLower(para.DataType) {
+						para.Enum = strings.Split(p[4], ",")
+						para.DefaultValue = p[5]
+					}
 				} else {
-					para.Description = p[3]
+					if "enum" == strings.ToLower(para.DataType) {
+						para.Enum = strings.Split(p[3], ",")
+						para.DefaultValue = p[4]
+					}
 				}
+				para.Description = p[len(p)-1]
 				opts.Parameters = append(opts.Parameters, para)
 			} else if strings.HasPrefix(t, "@Failure") {
 				rs := swagger.ResponseMessage{}
@@ -506,21 +513,24 @@ func getparams(str string) []string {
 	var start bool
 	var r []string
 	for i, c := range []rune(str) {
+		if len([]rune(str))-1 == i && start {
+			s = append(s, c)
+			r = append(r, string(s))
+		}
 		if unicode.IsSpace(c) {
 			if !start {
 				continue
 			} else {
-				if j == 3 {
-					r = append(r, string(s))
-					r = append(r, strings.TrimSpace((str[i+1:])))
-					break
-				}
 				start = false
 				j++
 				r = append(r, string(s))
 				s = make([]rune, 0)
 				continue
 			}
+		}
+		if c == '"' {
+			r = append(r, strings.TrimSpace((str[i:])))
+			break
 		}
 		start = true
 		s = append(s, c)
