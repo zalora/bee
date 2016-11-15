@@ -478,7 +478,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						isArray = true
 					}
 					if typ == "string" || typ == "number" || typ == "integer" || typ == "boolean" ||
-						typ == "array" || typ == "file" {
+						typ == "array" || typ == "file" || typ == "enum" {
 						paraType = typ
 					} else if sType, ok := basicTypes[typ]; ok {
 						typeFormat := strings.Split(sType, ":")
@@ -500,14 +500,14 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 				}
 				if len(p) > 4 {
 					para.Required, _ = strconv.ParseBool(p[3])
-					if "enum" == strings.ToLower(para.DataType) {
+					if "enum" == strings.ToLower(typ) {
 						para.Enum = strings.Split(p[4], ",")
-						para.DefaultValue = p[5]
+						para.Default = p[5]
 					}
 				} else {
-					if "enum" == strings.ToLower(para.DataType) {
+					if "enum" == strings.ToLower(typ) {
 						para.Enum = strings.Split(p[3], ",")
-						para.DefaultValue = p[4]
+						para.Default = p[4]
 					}
 				}
 				para.Description = strings.Trim(p[len(p)-1], `" `)
