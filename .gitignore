@@ -6,6 +6,7 @@
 # Folders
 _obj
 _test
+.idea
 
 # Architecture specific extensions/prefixes
 *.[568vq]
@@ -27,4 +28,4 @@ _testmain.go
 .DS_Store
 bee
 *.exe~
-.idea
+.goxc.local.json
