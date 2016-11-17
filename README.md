@@ -1,8 +1,6 @@
 bee
 ===
 
-[![Build Status](https://drone.io/github.com/beego/bee/status.png)](https://drone.io/github.com/beego/bee/latest)
-
 Bee is a command line tool facilitating development with beego framework.
 
 ## Requirements
@@ -15,7 +13,7 @@ Bee is a command line tool facilitating development with beego framework.
 Begin by installing `bee` using `go get` command.
 
 ```bash
-go get github.com/beego/bee
+go get github.com/zalora/bee
 ```
 
 Then you can add `bee` binary to PATH environment variable in your `~/.bashrc` or `~/.bash_profile` file:
@@ -27,7 +25,7 @@ export PATH=$PATH:<your_main_gopath>/bin/bee
 > If you already have `bee` installed, updating `bee` is simple:
 
 ```bash
-go get -u github.com/beego/bee
+go get -u github.com/zalora/bee
 ```
 
 ## Basic commands
