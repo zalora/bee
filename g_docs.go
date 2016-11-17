@@ -223,25 +223,25 @@ func analisysNSInclude(baseurl string, ce *ast.CallExpr) string {
 					tag = cname
 				}
 				if item.Get != nil {
-					item.Get.Tags = []string{tag}
+					item.Get.Tags = append(item.Get.Tags, tag)
 				}
 				if item.Post != nil {
-					item.Post.Tags = []string{tag}
+					item.Post.Tags = append(item.Post.Tags, tag)
 				}
 				if item.Put != nil {
-					item.Put.Tags = []string{tag}
+					item.Put.Tags = append(item.Put.Tags, tag)
 				}
 				if item.Patch != nil {
-					item.Patch.Tags = []string{tag}
+					item.Patch.Tags = append(item.Patch.Tags, tag)
 				}
 				if item.Head != nil {
-					item.Head.Tags = []string{tag}
+					item.Head.Tags = append(item.Head.Tags, tag)
 				}
 				if item.Delete != nil {
-					item.Delete.Tags = []string{tag}
+					item.Delete.Tags = append(item.Delete.Tags, tag)
 				}
 				if item.Options != nil {
-					item.Options.Tags = []string{tag}
+					item.Options.Tags = append(item.Options.Tags, tag)
 				}
 				if len(rootapi.Paths) == 0 {
 					rootapi.Paths = make(map[string]*swagger.Item)
