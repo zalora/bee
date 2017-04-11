@@ -42,6 +42,11 @@ const (
 	axml   = "application/xml"
 	aplain = "text/plain"
 	ahtml  = "text/html"
+
+	content_type_thrift_binary_webcontent_v1 = "application/vnd.zalora.webcontent.v1+thrift.binary"
+	content_type_thrift_json_webcontent_v1   = "application/vnd.zalora.webcontent.v1+thrift.json"
+	content_type_thrift_binary               = "application/vnd.apache.thrift.binary"
+	content_type_thrift_json                 = "application/vnd.apache.thrift.json"
 )
 
 var pkgCache map[string]struct{} //pkg:controller:function:comments comments: key:value
@@ -548,6 +553,18 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 					case "html":
 						opts.Consumes = append(opts.Consumes, ahtml)
 						opts.Produces = append(opts.Produces, ahtml)
+					case "thrift_binary":
+						opts.Consumes = append(opts.Consumes, content_type_thrift_binary)
+						opts.Produces = append(opts.Produces, content_type_thrift_binary)
+					case "thrift_json":
+						opts.Consumes = append(opts.Consumes, content_type_thrift_json)
+						opts.Produces = append(opts.Produces, content_type_thrift_json)
+					case "thrift_webcontent_binary":
+						opts.Consumes = append(opts.Consumes, content_type_thrift_binary_webcontent_v1)
+						opts.Produces = append(opts.Produces, content_type_thrift_binary_webcontent_v1)
+					case "thrift_webcontent_json":
+						opts.Consumes = append(opts.Consumes, content_type_thrift_json_webcontent_v1)
+						opts.Produces = append(opts.Produces, content_type_thrift_json_webcontent_v1)
 					}
 				}
 			}
