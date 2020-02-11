@@ -48,8 +48,6 @@ var (
 	exit chan bool
 	// Flag to watch the vendor folder
 	vendorWatch bool
-	// Current user workspace
-	currentGoPath string
 	// Current runmode
 	runmode string
 )
@@ -69,8 +67,8 @@ func init() {
 func runApp(cmd *Command, args []string) int {
 	ShowShortVersionBanner()
 
-	currentGoPath, _ = os.Getwd()
-	appname = path.Base(currentGoPath)
+	currpath, _ = os.Getwd()
+	appname = path.Base(currpath)
 	ColorLog("[INFO] Using '%s' as 'appname'\n", appname)
 
 	if strings.HasSuffix(appname, ".go") && isExist(currpath) {
@@ -104,7 +102,7 @@ func runApp(cmd *Command, args []string) int {
 	// Because monitor files has some issues, we watch current directory
 	// and ignore non-go files.
 	for _, p := range conf.DirStruct.Others {
-		paths = append(paths, strings.Replace(p, "$GOPATH", currentGoPath, -1))
+		paths = append(paths, strings.Replace(p, "$GOPATH", currpath, -1))
 	}
 
 	files := []string{}
