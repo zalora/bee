@@ -15,7 +15,6 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	path "path/filepath"
@@ -49,8 +48,6 @@ var (
 	exit chan bool
 	// Flag to watch the vendor folder
 	vendorWatch bool
-	// Current user workspace
-	currentGoPath string
 	// Current runmode
 	runmode string
 )
@@ -70,46 +67,27 @@ func init() {
 func runApp(cmd *Command, args []string) int {
 	ShowShortVersionBanner()
 
-	if len(args) == 0 || args[0] == "watchall" {
-		currpath, _ = os.Getwd()
+	currpath, _ = os.Getwd()
+	appname = path.Base(currpath)
+	ColorLog("[INFO] Using '%s' as 'appname'\n", appname)
 
-		if found, _gopath, _ := SearchGOPATHs(currpath); found {
-			appname = path.Base(currpath)
-			currentGoPath = _gopath
-		} else {
-			exitPrint(fmt.Sprintf("Bee does not support non Beego project: %s", currpath))
-		}
-		ColorLog("[INFO] Using '%s' as 'appname'\n", appname)
-	} else {
-		// Check if passed Bee application path/name exists in the GOPATH(s)
-		if found, _gopath, _path := SearchGOPATHs(args[0]); found {
-			currpath = _path
-			currentGoPath = _gopath
-			appname = path.Base(currpath)
-		} else {
-			panic(fmt.Sprintf("No Beego application '%s' found in your GOPATH", args[0]))
-		}
-
-		ColorLog("[INFO] Using '%s' as 'appname'\n", appname)
-
-		if strings.HasSuffix(appname, ".go") && isExist(currpath) {
-			ColorLog("[WARN] The appname is in conflict with currpath's file, do you want to build appname as %s\n", appname)
-			ColorLog("[INFO] Do you want to overwrite it? [yes|no]]  ")
-			if !askForConfirmation() {
-				return 0
-			}
+	if strings.HasSuffix(appname, ".go") && isExist(currpath) {
+		ColorLog("[WARN] The appname is in conflict with currpath's file, do you want to build appname as %s\n", appname)
+		ColorLog("[INFO] Do you want to overwrite it? [yes|no]]  ")
+		if !askForConfirmation() {
+			return 0
 		}
 	}
 
 	Debugf("current path:%s\n", currpath)
 
-	if runmode == "prod" || runmode == "dev"{
+	if runmode == "prod" || runmode == "dev" {
 		os.Setenv("BEEGO_RUNMODE", runmode)
 		ColorLog("[INFO] Using '%s' as 'runmode'\n", os.Getenv("BEEGO_RUNMODE"))
-	}else if runmode != ""{
+	} else if runmode != "" {
 		os.Setenv("BEEGO_RUNMODE", runmode)
 		ColorLog("[WARN] Using '%s' as 'runmode'\n", os.Getenv("BEEGO_RUNMODE"))
-	}else if os.Getenv("BEEGO_RUNMODE") != ""{
+	} else if os.Getenv("BEEGO_RUNMODE") != "" {
 		ColorLog("[WARN] Using '%s' as 'runmode'\n", os.Getenv("BEEGO_RUNMODE"))
 	}
 
@@ -124,7 +102,7 @@ func runApp(cmd *Command, args []string) int {
 	// Because monitor files has some issues, we watch current directory
 	// and ignore non-go files.
 	for _, p := range conf.DirStruct.Others {
-		paths = append(paths, strings.Replace(p, "$GOPATH", currentGoPath, -1))
+		paths = append(paths, strings.Replace(p, "$GOPATH", currpath, -1))
 	}
 
 	files := []string{}
