@@ -273,20 +273,35 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 		pps := strings.Split(pkgpath, "/")
 		importlist[pps[len(pps)-1]] = pkgpath
 	}
-	gopath := os.Getenv("GOPATH")
-	if gopath == "" {
-		panic("please set gopath")
-	}
-	pkgRealpath := ""
 
-	wgopath := filepath.SplitList(gopath)
-	for _, wg := range wgopath {
-		wg, _ = filepath.EvalSymlinks(filepath.Join(wg, "src", pkgpath))
-		if utils.FileExists(wg) {
-			pkgRealpath = wg
-			break
-		}
+	// Lets search for the beginning of package path in the current working
+	// directory (cwd). If found, replace the the beginning of the package path
+	// in current working directory with the rest of the package path.
+	//
+	// cwd: /Users/foo/my/path/to/the/project
+	// pkgpath: /the/project/pkg/server/handlers
+	//
+	// will become: /Users/foo/my/path/to/the/project/pkg/server/handlers
+
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(fmt.Sprintf("could not get current working directory: %v", err))
 	}
+
+	pkgPathParts := strings.Split(pkgpath, string(os.PathSeparator))
+	if len(pkgPathParts) == 0 {
+		panic(fmt.Sprintf("invalid package path: %s", pkgpath))
+	}
+
+	idx := strings.Index(wd, pkgPathParts[0])
+	if idx < 0 {
+		// If we dont find the package path in the cwd, lets not generate docs
+		// for it.
+		return
+	}
+
+	pkgRealpath, _ := filepath.EvalSymlinks(filepath.Join(wd[:idx], pkgpath))
+
 	if pkgRealpath != "" {
 		if _, ok := pkgCache[pkgpath]; ok {
 			return
