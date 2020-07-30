@@ -166,7 +166,7 @@ func (w *routerWalker) build(srcs []*source) (*Package, error) {
 		JoinPath:      path.Join,
 		IsAbsPath:     path.IsAbs,
 		SplitPathList: func(list string) []string { return strings.Split(list, ":") },
-		IsDir:         func(path string) bool { panic("unexpected") },
+		IsDir:         nil,
 		HasSubdir:     func(root, dir string) (rel string, ok bool) { panic("unexpected") },
 		ReadDir:       func(dir string) (fi []os.FileInfo, err error) { return w.readDir(dir) },
 		OpenFile:      func(path string) (r io.ReadCloser, err error) { return w.openFile(path) },
