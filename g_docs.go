@@ -275,13 +275,13 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 	}
 
 	// Lets search for the beginning of package path in the current working
-	// directory (cwd). If found, replace the the beginning of the package path
+	// directory (cwd). If found, replace the beginning of the package path
 	// in current working directory with the rest of the package path.
 	//
-	// cwd: /Users/foo/my/path/to/the/project
-	// pkgpath: /the/project/pkg/server/handlers
+	// cwd: /Users/foo/my/path/to/the/<project>
+	// pkgpath: github.com/<user>/<project>/pkg/server/handlers
 	//
-	// will become: /Users/foo/my/path/to/the/project/pkg/server/handlers
+	// will become: /Users/foo/my/path/to/the/<project>/pkg/server/handlers
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -293,14 +293,26 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 		panic(fmt.Sprintf("invalid package path: %s", pkgpath))
 	}
 
-	idx := strings.Index(wd, pkgPathParts[0])
-	if idx < 0 {
-		// If we dont find the package path in the cwd, lets not generate docs
-		// for it.
+	// Extract the project name from the package path.
+	// Assumption: package path has always the form github.com/<user>/<project>
+	project := pkgPathParts[2]
+
+	if !strings.Contains(wd, project) {
+		// If we dont find the project in the cwd, lets not generate docs for it.
 		return
 	}
 
-	pkgRealpath, _ := filepath.EvalSymlinks(filepath.Join(wd[:idx], pkgpath))
+	idx := strings.Index(pkgpath, project)
+	if idx < 0 {
+		panic(fmt.Sprintf("package path does not contain the project %q: %s",
+			project, pkgpath))
+	}
+
+	// github.com/<user>/<project>/modules/foobar -> /modules/foobar
+	offset := idx + len(project)
+	fp := filepath.Join(wd, pkgpath[offset:])
+
+	pkgRealpath, _ := filepath.EvalSymlinks(fp)
 
 	if pkgRealpath != "" {
 		if _, ok := pkgCache[pkgpath]; ok {
