@@ -683,6 +683,8 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 		ColorLog("[ERRO] the model %s parser.ParseDir error\n", str)
 		os.Exit(1)
 	}
+
+	var packageName string
 	m.Type = "object"
 	for _, pkg := range astPkgs {
 		for _, fl := range pkg.Files {
@@ -691,7 +693,8 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 					if k != objectname {
 						continue
 					}
-					parseObject(d, k, &m, &realTypes, astPkgs)
+					packageName = pkg.Name
+					parseObject(d, k, &m, &realTypes, astPkgs, packageName)
 				}
 			}
 		}
@@ -704,11 +707,12 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 	if len(rootapi.Definitions) == 0 {
 		rootapi.Definitions = make(map[string]swagger.Schema)
 	}
+	objectname = packageName + "." + objectname
 	rootapi.Definitions[objectname] = m
 	return
 }
 
-func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string, astPkgs map[string]*ast.Package) {
+func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string, astPkgs map[string]*ast.Package, packageName string) {
 	ts, ok := d.Decl.(*ast.TypeSpec)
 	if !ok {
 		ColorLog("Unknown type without TypeSec: %v\n", d)
@@ -726,6 +730,16 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 			isSlice, realType, sType := typeAnalyser(field)
 			*realTypes = append(*realTypes, realType)
 			mp := swagger.Propertie{}
+			if (isSlice && isBasicType(realType)) || sType == "object" {
+				if len(strings.Split(realType, " ")) > 1 {
+					realType = strings.Replace(realType, " ", ".", -1)
+					realType = strings.Replace(realType, "&", "", -1)
+					realType = strings.Replace(realType, "{", "", -1)
+					realType = strings.Replace(realType, "}", "", -1)
+				} else {
+					realType = packageName + "." + realType
+				}
+			}
 			if isSlice {
 				mp.Type = "array"
 				if isBasicType(realType) {
@@ -804,7 +818,7 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 					for _, fl := range pkg.Files {
 						for nameOfObj, obj := range fl.Scope.Objects {
 							if obj.Name == fmt.Sprint(field.Type) {
-								parseObject(obj, nameOfObj, m, realTypes, astPkgs)
+								parseObject(obj, nameOfObj, m, realTypes, astPkgs, pkg.Name)
 							}
 						}
 					}
