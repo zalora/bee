@@ -510,13 +510,20 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						typ = typ[2:]
 						isArray = true
 					}
+
 					if typ == "string" || typ == "number" || typ == "integer" || typ == "boolean" ||
-						typ == "array" || typ == "file" || typ == "enum" {
+						typ == "array" || typ == "file" {
 						paraType = typ
 					} else if sType, ok := basicTypes[typ]; ok {
 						typeFormat := strings.Split(sType, ":")
 						paraType = typeFormat[0]
 						paraFormat = typeFormat[1]
+					} else if typ == "enum" {
+						paraType = "string"
+						para.Enum = strings.Split(p[4], ",")
+						if len(p) > 6 {
+							para.Default = p[5]
+						}
 					} else {
 						ColorLog("[WARN][%s.%s] Unknow param type: %s\n", controllerName, funcName, typ)
 					}
@@ -531,18 +538,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						para.Format = paraFormat
 					}
 				}
-				if len(p) > 4 {
-					para.Required, _ = strconv.ParseBool(p[3])
-					if "enum" == strings.ToLower(typ) {
-						para.Enum = strings.Split(p[4], ",")
-						para.Default = p[5]
-					}
-				} else {
-					if "enum" == strings.ToLower(typ) {
-						para.Enum = strings.Split(p[3], ",")
-						para.Default = p[4]
-					}
-				}
+				para.Required, _ = strconv.ParseBool(p[3])
 				para.Description = strings.Trim(p[len(p)-1], `" `)
 				opts.Parameters = append(opts.Parameters, para)
 			} else if strings.HasPrefix(t, "@Failure") {
