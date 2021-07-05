@@ -723,47 +723,9 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 	if st.Fields.List != nil {
 		m.Properties = make(map[string]swagger.Propertie)
 		for _, field := range st.Fields.List {
-			isSlice, realType, sType := typeAnalyser(field)
-			*realTypes = append(*realTypes, realType)
-			mp := swagger.Propertie{}
-			if (isSlice && isBasicType(realType)) || sType == "object" {
-				if len(strings.Split(realType, " ")) > 1 {
-					realType = strings.Replace(realType, " ", ".", -1)
-					realType = strings.Replace(realType, "&", "", -1)
-					realType = strings.Replace(realType, "{", "", -1)
-					realType = strings.Replace(realType, "}", "", -1)
-				} else {
-					realType = packageName + "." + realType
-				}
-			}
-			if isSlice {
-				mp.Type = "array"
-				if isBasicType(realType) {
-					typeFormat := strings.Split(sType, ":")
-					mp.Items = &swagger.Propertie{
-						Type:   typeFormat[0],
-						Format: typeFormat[1],
-					}
-				} else {
-					mp.Items = &swagger.Propertie{
-						Ref: "#/definitions/" + realType,
-					}
-				}
-			} else {
-				if sType == "object" {
-					mp.Ref = "#/definitions/" + realType
-				} else if isBasicType(realType) {
-					typeFormat := strings.Split(sType, ":")
-					mp.Type = typeFormat[0]
-					mp.Format = typeFormat[1]
-				} else if realType == "map" {
-					typeFormat := strings.Split(sType, ":")
-					mp.AdditionalProperties = &swagger.Propertie{
-						Type:   typeFormat[0],
-						Format: typeFormat[1],
-					}
-				}
-			}
+			mp := getSwaggerDefObjectProps(
+				field.Type, packageName, realTypes,
+			)
 			if field.Names != nil {
 
 				// set property name as field name
@@ -822,35 +784,6 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 			}
 		}
 	}
-}
-
-func typeAnalyser(f *ast.Field) (isSlice bool, realType, swaggerType string) {
-	if arr, ok := f.Type.(*ast.ArrayType); ok {
-		if isBasicType(fmt.Sprint(arr.Elt)) {
-			return false, fmt.Sprintf("[]%v", arr.Elt), basicTypes[fmt.Sprint(arr.Elt)]
-		}
-		if mp, ok := arr.Elt.(*ast.MapType); ok {
-			return false, fmt.Sprintf("map[%v][%v]", mp.Key, mp.Value), "object"
-		}
-		if star, ok := arr.Elt.(*ast.StarExpr); ok {
-			return true, fmt.Sprint(star.X), "object"
-		}
-		return true, fmt.Sprint(arr.Elt), "object"
-	}
-	switch t := f.Type.(type) {
-	case *ast.StarExpr:
-		return false, fmt.Sprint(t.X), "object"
-	case *ast.MapType:
-		val := fmt.Sprintf("%v", t.Value)
-		if isBasicType(val) {
-			return false, "map", basicTypes[val]
-		}
-		return false, val, "object"
-	}
-	if k, ok := basicTypes[fmt.Sprint(f.Type)]; ok {
-		return false, fmt.Sprint(f.Type), k
-	}
-	return false, fmt.Sprint(f.Type), "object"
 }
 
 func isBasicType(Type string) bool {
@@ -916,4 +849,78 @@ func urlReplace(src string) string {
 		}
 	}
 	return strings.Join(pt, "/")
+}
+
+func getSwaggerDefObjectProps(field ast.Expr, packageName string, realTypes *[]string) (props swagger.Propertie) {
+	if isBasicType(fmt.Sprint(field)) {
+		basicType := basicTypes[fmt.Sprint(field)]
+		propsInfo := strings.Split(basicType, ":")
+
+		if len(propsInfo) != 2 {
+			// TODO: ERROR HERE
+			return
+		}
+
+		props.Type = propsInfo[0]
+		props.Format = propsInfo[1]
+
+		*realTypes = append(*realTypes, fmt.Sprint(field))
+		return
+	}
+
+	switch f := field.(type) {
+	case *ast.StarExpr:
+		object := fmt.Sprint(f.X)
+		props.Ref = "#/definitions/" + objectWithPackageName(
+			object, packageName,
+		)
+
+		*realTypes = append(*realTypes, object)
+		return
+	case *ast.ArrayType:
+		object := getSwaggerDefObjectProps(
+			f.Elt, packageName, realTypes,
+		)
+		props.Type = "array"
+		props.Items = &object
+		return
+	case *ast.MapType:
+		object := getSwaggerDefObjectProps(
+			f.Value, packageName, realTypes,
+		)
+		props.Type = "object"
+		props.AdditionalProperties = &object
+		return
+	case *ast.StructType:
+		object := make(map[string]swagger.Propertie)
+		for _, v := range f.Fields.List {
+			object[v.Names[0].Name] = getSwaggerDefObjectProps(
+				v.Type, packageName, realTypes,
+			)
+		}
+
+		props.Type = "object"
+		props.Properties = object
+		return
+	}
+
+	object := fmt.Sprint(field)
+	props.Ref = "#/definitions/" + objectWithPackageName(
+		object, packageName,
+	)
+	*realTypes = append(*realTypes, object)
+	return
+}
+
+func objectWithPackageName(object, packageName string) string {
+	if len(strings.Split(object, " ")) == 1 {
+		return packageName + "." + object
+	}
+
+	object = strings.Replace(object, " ", ".", -1)
+	object = strings.Replace(object, "&", "", -1)
+	object = strings.Replace(object, "{", "", -1)
+	object = strings.Replace(object, "}", "", -1)
+
+	return object
 }
