@@ -58,12 +58,12 @@ var modelsList map[string]map[string]swagger.Schema
 var rootapi swagger.Swagger
 
 type objectParserResource struct {
-	Object      *ast.Object
-	Schema      *swagger.Schema
-	RealTypes   *[]string
-	AstPkgs     map[string]*ast.Package
-	PackageName string
-	PathInfo    map[string]string
+	object      *ast.Object
+	schema      *swagger.Schema
+	realTypes   *[]string
+	astPkgs     map[string]*ast.Package
+	packageName string
+	pathInfo    map[string]string
 }
 
 func init() {
@@ -695,27 +695,29 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 		for _, fl := range pkg.Files {
 			pathInfo, err := generatePathInfo(fl)
 			if err != nil {
-				ColorLog("[ERRO] failed generating path info: %v", err)
+				ColorLog("[ERRO] failed when generating path info: %v", err)
 				os.Exit(1)
 			}
 
 			for _, d := range fl.Scope.Objects {
-				if d.Kind == ast.Typ && d.Name == objectname {
-					pathInfo[pkg.Name] = pkgpath
-
-					res := new(objectParserResource)
-					res.Object = d
-					res.Schema = &m
-					res.RealTypes = &realTypes
-					res.AstPkgs = astPkgs
-					res.PackageName = pkg.Name
-					res.PathInfo = pathInfo
-					res.parseObject()
-
-					packageName = pkg.Name
-
-					break
+				if d.Kind != ast.Typ || d.Name != objectname {
+					continue
 				}
+
+				pathInfo[pkg.Name] = pkgpath
+
+				res := new(objectParserResource)
+				res.object = d
+				res.schema = &m
+				res.realTypes = &realTypes
+				res.astPkgs = astPkgs
+				res.packageName = pkg.Name
+				res.pathInfo = pathInfo
+				res.parseObject()
+
+				packageName = pkg.Name
+
+				break
 			}
 		}
 	}
@@ -733,9 +735,9 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 }
 
 func (res *objectParserResource) parseObject() {
-	ts, ok := res.Object.Decl.(*ast.TypeSpec)
+	ts, ok := res.object.Decl.(*ast.TypeSpec)
 	if !ok {
-		ColorLog("Unknown type without TypeSec: %v\n", res.Object)
+		ColorLog("Unknown type without TypeSec: %v\n", res.object)
 		os.Exit(1)
 	}
 
@@ -743,11 +745,11 @@ func (res *objectParserResource) parseObject() {
 	case *ast.StructType:
 		res.parseStruct(t)
 	case *ast.Ident, *ast.ArrayType:
-		res.Schema.Title = res.Object.Name
-		res.Schema.Properties = make(map[string]swagger.Propertie)
-		propertie := constructObjectPropertie(t, res.PackageName, res.RealTypes, res.PathInfo)
+		res.schema.Title = res.object.Name
+		res.schema.Properties = make(map[string]swagger.Propertie)
+		propertie := constructObjectPropertie(t, res.packageName, res.realTypes, res.pathInfo)
 
-		res.Schema.Properties[res.Object.Name] = propertie
+		res.schema.Properties[res.object.Name] = propertie
 	default:
 		ColorLog("[WARN][parseObject] %v type is not handled yet", t)
 		return
@@ -827,8 +829,7 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 
 	// basic Go type can be directly translated into swagger type
 	// with pre-defined mapping
-	if isBasicType(fmt.Sprint(field)) {
-		basicType := basicTypes[fmt.Sprint(field)]
+	if basicType, ok := basicTypes[fmt.Sprint(field)]; ok {
 		propInfo := strings.Split(basicType, ":")
 
 		if len(propInfo) != 2 {
@@ -920,7 +921,7 @@ func generatePathInfo(file *ast.File) (pathInfo map[string]string, err error) {
 	pathInfo = make(map[string]string)
 	goSrcPath := os.Getenv("GOPATH") + "/src/"
 
-	// currenPath of where the `bee` is run
+	// currentPath of where the `bee` is run
 	currentPath, err := os.Getwd()
 	if err != nil {
 		return
@@ -938,7 +939,7 @@ func generatePathInfo(file *ast.File) (pathInfo map[string]string, err error) {
 		}
 		importPath = strings.Replace(importPath, basePath, "", -1)
 
-		// if the package imported is named, then use the name
+		// if the imported package is named, then use the name for key
 		if v.Name != nil {
 			pathInfo[v.Name.Name] = importPath
 			continue
@@ -974,12 +975,12 @@ func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map
 // parseStruct parse a struct type object by iterating over all of the
 // fields and translate it into the swagger types and definitions.
 func (res *objectParserResource) parseStruct(structDef *ast.StructType) {
-	res.Schema.Title = res.Object.Name
+	res.schema.Title = res.object.Name
 	if structDef.Fields.List != nil {
-		res.Schema.Properties = make(map[string]swagger.Propertie)
+		res.schema.Properties = make(map[string]swagger.Propertie)
 		for _, field := range structDef.Fields.List {
 			propertie := constructObjectPropertie(
-				field.Type, res.PackageName, res.RealTypes, res.PathInfo,
+				field.Type, res.packageName, res.realTypes, res.pathInfo,
 			)
 			if field.Names != nil {
 
@@ -988,7 +989,7 @@ func (res *objectParserResource) parseStruct(structDef *ast.StructType) {
 
 				// if no tag skip tag processing
 				if field.Tag == nil {
-					res.Schema.Properties[name] = propertie
+					res.schema.Properties[name] = propertie
 					continue
 				}
 
@@ -1015,8 +1016,8 @@ func (res *objectParserResource) parseStruct(structDef *ast.StructType) {
 						}
 					}
 					if required := stag.Get("required"); required != "" {
-						res.Schema.Required = append(
-							res.Schema.Required,
+						res.schema.Required = append(
+							res.schema.Required,
 							name,
 						)
 					}
@@ -1024,13 +1025,13 @@ func (res *objectParserResource) parseStruct(structDef *ast.StructType) {
 						propertie.Description = desc
 					}
 
-					res.Schema.Properties[name] = propertie
+					res.schema.Properties[name] = propertie
 				}
 				if ignore := stag.Get("ignore"); ignore != "" {
 					continue
 				}
 			} else {
-				for _, pkg := range res.AstPkgs {
+				for _, pkg := range res.astPkgs {
 					for _, fl := range pkg.Files {
 						pathInfo, err := generatePathInfo(fl)
 						if err != nil {
@@ -1040,9 +1041,9 @@ func (res *objectParserResource) parseStruct(structDef *ast.StructType) {
 
 						for _, obj := range fl.Scope.Objects {
 							if obj.Name == fmt.Sprint(field.Type) {
-								res.Object = obj
-								res.PackageName = pkg.Name
-								res.PathInfo = pathInfo
+								res.object = obj
+								res.packageName = pkg.Name
+								res.pathInfo = pathInfo
 								res.parseObject()
 							}
 						}
