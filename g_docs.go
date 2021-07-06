@@ -684,13 +684,28 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 	m.Type = "object"
 	for _, pkg := range astPkgs {
 		for _, fl := range pkg.Files {
+			pathInfo, err := generatePathInfo(fl)
+			if err != nil {
+				ColorLog("[ERRO] failed generating path info: %v", err)
+				os.Exit(1)
+			}
+
 			for k, d := range fl.Scope.Objects {
 				if d.Kind == ast.Typ {
 					if k != objectname {
 						continue
 					}
 					packageName = pkg.Name
-					parseObject(d, k, &m, &realTypes, astPkgs, packageName)
+					pathInfo[packageName] = pkgpath
+					parseObject(
+						d,
+						k,
+						&m,
+						&realTypes,
+						astPkgs,
+						packageName,
+						pathInfo,
+					)
 				}
 			}
 		}
@@ -708,82 +723,24 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 	return
 }
 
-func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string, astPkgs map[string]*ast.Package, packageName string) {
+func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string, astPkgs map[string]*ast.Package, packageName string, pathInfo map[string]string) {
 	ts, ok := d.Decl.(*ast.TypeSpec)
 	if !ok {
 		ColorLog("Unknown type without TypeSec: %v\n", d)
 		os.Exit(1)
 	}
 	// TODO support other types, such as `ArrayType`, `MapType`, `InterfaceType` etc...
-	st, ok := ts.Type.(*ast.StructType)
-	if !ok {
-		return
-	}
-	m.Title = k
-	if st.Fields.List != nil {
+	switch t := ts.Type.(type) {
+	case *ast.StructType:
+		parseStruct(m, t, k, packageName, realTypes, pathInfo, astPkgs)
+	case *ast.Ident, *ast.ArrayType:
+		m.Title = k
 		m.Properties = make(map[string]swagger.Propertie)
-		for _, field := range st.Fields.List {
-			mp := getSwaggerDefObjectProps(
-				field.Type, packageName, realTypes,
-			)
-			if field.Names != nil {
-
-				// set property name as field name
-				var name = field.Names[0].Name
-
-				// if no tag skip tag processing
-				if field.Tag == nil {
-					m.Properties[name] = mp
-					continue
-				}
-
-				var tagValues []string
-				stag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
-				tag := stag.Get("json")
-
-				if tag != "" {
-					tagValues = strings.Split(tag, ",")
-				}
-
-				// dont add property if json tag first value is "-"
-				if len(tagValues) == 0 || tagValues[0] != "-" {
-
-					// set property name to the left most json tag value only if is not omitempty
-					if len(tagValues) > 0 && tagValues[0] != "omitempty" {
-						name = tagValues[0]
-					}
-
-					if thrifttag := stag.Get("thrift"); thrifttag != "" {
-						ts := strings.Split(thrifttag, ",")
-						if ts[0] != "" {
-							name = ts[0]
-						}
-					}
-					if required := stag.Get("required"); required != "" {
-						m.Required = append(m.Required, name)
-					}
-					if desc := stag.Get("description"); desc != "" {
-						mp.Description = desc
-					}
-
-					m.Properties[name] = mp
-				}
-				if ignore := stag.Get("ignore"); ignore != "" {
-					continue
-				}
-			} else {
-				for _, pkg := range astPkgs {
-					for _, fl := range pkg.Files {
-						for nameOfObj, obj := range fl.Scope.Objects {
-							if obj.Name == fmt.Sprint(field.Type) {
-								parseObject(obj, nameOfObj, m, realTypes, astPkgs, pkg.Name)
-							}
-						}
-					}
-				}
-			}
-		}
+		mp := constructObjectPropertie(t, packageName, realTypes, pathInfo)
+		m.Properties[k] = mp
 	}
+
+	return
 }
 
 func isBasicType(Type string) bool {
@@ -829,9 +786,8 @@ func appendModels(cmpath, pkgpath, controllerName string, realTypes []string) {
 			if _, ok := modelsList[pkgpath+controllerName][p+realType]; ok {
 				continue
 			}
-			//fmt.Printf(pkgpath + ":" + controllerName + ":" + cmpath + ":" + realType + "\n")
-			_, _, mod, newRealTypes := getModel(p + realType)
-			modelsList[pkgpath+controllerName][p+realType] = mod
+			_, _, mod, newRealTypes := getModel(realType)
+			modelsList[pkgpath+controllerName][realType] = mod
 			appendModels(cmpath, pkgpath, controllerName, newRealTypes)
 		}
 	}
@@ -851,67 +807,86 @@ func urlReplace(src string) string {
 	return strings.Join(pt, "/")
 }
 
-func getSwaggerDefObjectProps(field ast.Expr, packageName string, realTypes *[]string) (props swagger.Propertie) {
+// constructObjectPropertie construct a swagger.Propertie out of
+// an ast.Expr. This function recursively traverse all expression
+// until it reaches an object or pre-defined basic golang type.
+func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]string, pathInfo map[string]string) (propertie swagger.Propertie) {
+
+	// basic Go type can be directly translated into swagger type
+	// with pre-defined mapping
 	if isBasicType(fmt.Sprint(field)) {
 		basicType := basicTypes[fmt.Sprint(field)]
-		propsInfo := strings.Split(basicType, ":")
+		propInfo := strings.Split(basicType, ":")
 
-		if len(propsInfo) != 2 {
-			// TODO: ERROR HERE
-			return
+		if len(propInfo) != 2 {
+			ColorLog("[ERRO] basicTypes const is not properly configured for %v", field)
+			os.Exit(1)
 		}
 
-		props.Type = propsInfo[0]
-		props.Format = propsInfo[1]
+		propertie.Type = propInfo[0]
+		propertie.Format = propInfo[1]
 
-		*realTypes = append(*realTypes, fmt.Sprint(field))
 		return
 	}
 
 	switch f := field.(type) {
 	case *ast.StarExpr:
 		object := fmt.Sprint(f.X)
-		props.Ref = "#/definitions/" + objectWithPackageName(
-			object, packageName,
-		)
-
-		*realTypes = append(*realTypes, object)
+		pkgObject := objectWithPackageName(object, packageName)
+		propertie.Ref = "#/definitions/" + pkgObject
+		appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
 		return
 	case *ast.ArrayType:
-		object := getSwaggerDefObjectProps(
-			f.Elt, packageName, realTypes,
+		object := constructObjectPropertie(
+			f.Elt, packageName, realTypes, pathInfo,
 		)
-		props.Type = "array"
-		props.Items = &object
+		propertie.Type = "array"
+		propertie.Items = &object
 		return
 	case *ast.MapType:
-		object := getSwaggerDefObjectProps(
-			f.Value, packageName, realTypes,
+		object := constructObjectPropertie(
+			f.Value, packageName, realTypes, pathInfo,
 		)
-		props.Type = "object"
-		props.AdditionalProperties = &object
+		propertie.Type = "object"
+		propertie.AdditionalProperties = &object
 		return
 	case *ast.StructType:
 		object := make(map[string]swagger.Propertie)
 		for _, v := range f.Fields.List {
-			object[v.Names[0].Name] = getSwaggerDefObjectProps(
-				v.Type, packageName, realTypes,
+			object[v.Names[0].Name] = constructObjectPropertie(
+				v.Type, packageName, realTypes, pathInfo,
 			)
 		}
 
-		props.Type = "object"
-		props.Properties = object
+		propertie.Type = "object"
+		propertie.Properties = object
+		return
+	// type identity; eg. type anyType int64
+	case *ast.Ident:
+		return constructObjectPropertie(
+			f.Obj.Decl.(*ast.TypeSpec).Type,
+			packageName,
+			realTypes,
+			pathInfo,
+		)
+	case *ast.SelectorExpr:
+		object := fmt.Sprint(f)
+		pkgObject := objectWithPackageName(object, packageName)
+		propertie.Ref = "#/definitions/" + pkgObject
+		appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
+		return
+	default:
+		ColorLog("[WARN] %v type is not handled yet", f)
 		return
 	}
-
-	object := fmt.Sprint(field)
-	props.Ref = "#/definitions/" + objectWithPackageName(
-		object, packageName,
-	)
-	*realTypes = append(*realTypes, object)
-	return
 }
 
+// objectWithPackageName returns an object with package name in format
+// packageName.Object. There are two types of object that can be identified
+// by ast, the internal and imported objects.
+// The imported object comes with `&{PackageName Object}` format and
+// the internal object comes with `object` format. In the latter
+// case we need to assign the current package name to the object.
 func objectWithPackageName(object, packageName string) string {
 	if len(strings.Split(object, " ")) == 1 {
 		return packageName + "." + object
@@ -923,4 +898,138 @@ func objectWithPackageName(object, packageName string) string {
 	object = strings.Replace(object, "}", "", -1)
 
 	return object
+}
+
+// generatePathInfo generates all imported packages in a file into a map.
+// the name of the package will be used as the map key, and the path
+// to the package will be used as the map value.
+func generatePathInfo(file *ast.File) (pathInfo map[string]string, err error) {
+	pathInfo = make(map[string]string)
+	goSrcPath := os.Getenv("GOPATH") + "/src/"
+
+	// currenPath of where the `bee` is run
+	currentPath, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	// basePath is the currentPath without GOPATH + src prefix
+	// eg. github.com/organization/repository/
+	basePath := strings.Replace(currentPath, goSrcPath, "", -1)
+
+	var importPath string
+	for _, v := range file.Imports {
+		importPath = strings.Trim(v.Path.Value, "\"")
+		if !strings.HasPrefix(importPath, basePath) {
+			continue
+		}
+		importPath = strings.Replace(importPath, basePath, "", -1)
+
+		// if the package imported is named, then use the name
+		if v.Name != nil {
+			pathInfo[v.Name.Name] = importPath
+			continue
+		}
+
+		packageNames := strings.Split(importPath, "/")
+		name := packageNames[len(packageNames)-1]
+
+		pathInfo[name] = importPath
+	}
+
+	return
+}
+
+// appendObjectToRealTypes append an object with its full path
+// from the root package to *realTypes array.
+func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map[string]string) {
+	pkgObjectSplit := strings.Split(pkgObject, ".")
+
+	if len(pkgObjectSplit) != 2 {
+		ColorLog("[WARN] %v pkgObject passed to realTypes length should be 2", pkgObjectSplit)
+		return
+	}
+
+	pkg := pkgObjectSplit[0]
+	object := pkgObjectSplit[1]
+
+	realType := pathInfo[pkg] + "." + object
+	realType = strings.Replace(realType, "/", ".", -1)
+	*realTypes = append(*realTypes, realType)
+}
+
+// parseStruct parse a struct type object by iterating over all of the
+// fields and create swagger type and definitions out of it
+func parseStruct(m *swagger.Schema, structDef *ast.StructType, objectName string, packageName string, realTypes *[]string, pathInfo map[string]string, astPkgs map[string]*ast.Package) {
+	m.Title = objectName
+	if structDef.Fields.List != nil {
+		m.Properties = make(map[string]swagger.Propertie)
+		for _, field := range structDef.Fields.List {
+			propertie := constructObjectPropertie(
+				field.Type, packageName, realTypes, pathInfo,
+			)
+			if field.Names != nil {
+
+				// set property name as field name
+				var name = field.Names[0].Name
+
+				// if no tag skip tag processing
+				if field.Tag == nil {
+					m.Properties[name] = propertie
+					continue
+				}
+
+				var tagValues []string
+				stag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
+				tag := stag.Get("json")
+
+				if tag != "" {
+					tagValues = strings.Split(tag, ",")
+				}
+
+				// dont add property if json tag first value is "-"
+				if len(tagValues) == 0 || tagValues[0] != "-" {
+
+					// set property name to the left most json tag value only if is not omitempty
+					if len(tagValues) > 0 && tagValues[0] != "omitempty" {
+						name = tagValues[0]
+					}
+
+					if thrifttag := stag.Get("thrift"); thrifttag != "" {
+						ts := strings.Split(thrifttag, ",")
+						if ts[0] != "" {
+							name = ts[0]
+						}
+					}
+					if required := stag.Get("required"); required != "" {
+						m.Required = append(m.Required, name)
+					}
+					if desc := stag.Get("description"); desc != "" {
+						propertie.Description = desc
+					}
+
+					m.Properties[name] = propertie
+				}
+				if ignore := stag.Get("ignore"); ignore != "" {
+					continue
+				}
+			} else {
+				for _, pkg := range astPkgs {
+					for _, fl := range pkg.Files {
+						pathInfo, err := generatePathInfo(fl)
+						if err != nil {
+							ColorLog("[ERRO] failed generating path info: %v", err)
+							os.Exit(1)
+						}
+
+						for nameOfObj, obj := range fl.Scope.Objects {
+							if obj.Name == fmt.Sprint(field.Type) {
+								parseObject(obj, nameOfObj, m, realTypes, astPkgs, pkg.Name, pathInfo)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
