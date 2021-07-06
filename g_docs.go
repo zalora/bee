@@ -57,6 +57,15 @@ var controllerList map[string]map[string]*swagger.Item //controllername Paths it
 var modelsList map[string]map[string]swagger.Schema
 var rootapi swagger.Swagger
 
+type objectParserResource struct {
+	Object      *ast.Object
+	Schema      *swagger.Schema
+	RealTypes   *[]string
+	AstPkgs     map[string]*ast.Package
+	PackageName string
+	PathInfo    map[string]string
+}
+
 func init() {
 	pkgCache = make(map[string]struct{})
 	controllerComments = make(map[string]string)
@@ -690,22 +699,22 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 				os.Exit(1)
 			}
 
-			for k, d := range fl.Scope.Objects {
-				if d.Kind == ast.Typ {
-					if k != objectname {
-						continue
-					}
+			for _, d := range fl.Scope.Objects {
+				if d.Kind == ast.Typ && d.Name == objectname {
+					pathInfo[pkg.Name] = pkgpath
+
+					res := new(objectParserResource)
+					res.Object = d
+					res.Schema = &m
+					res.RealTypes = &realTypes
+					res.AstPkgs = astPkgs
+					res.PackageName = pkg.Name
+					res.PathInfo = pathInfo
+					res.parseObject()
+
 					packageName = pkg.Name
-					pathInfo[packageName] = pkgpath
-					parseObject(
-						d,
-						k,
-						&m,
-						&realTypes,
-						astPkgs,
-						packageName,
-						pathInfo,
-					)
+
+					break
 				}
 			}
 		}
@@ -723,21 +732,25 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 	return
 }
 
-func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string, astPkgs map[string]*ast.Package, packageName string, pathInfo map[string]string) {
-	ts, ok := d.Decl.(*ast.TypeSpec)
+func (res *objectParserResource) parseObject() {
+	ts, ok := res.Object.Decl.(*ast.TypeSpec)
 	if !ok {
-		ColorLog("Unknown type without TypeSec: %v\n", d)
+		ColorLog("Unknown type without TypeSec: %v\n", res.Object)
 		os.Exit(1)
 	}
-	// TODO support other types, such as `ArrayType`, `MapType`, `InterfaceType` etc...
+
 	switch t := ts.Type.(type) {
 	case *ast.StructType:
-		parseStruct(m, t, k, packageName, realTypes, pathInfo, astPkgs)
+		res.parseStruct(t)
 	case *ast.Ident, *ast.ArrayType:
-		m.Title = k
-		m.Properties = make(map[string]swagger.Propertie)
-		mp := constructObjectPropertie(t, packageName, realTypes, pathInfo)
-		m.Properties[k] = mp
+		res.Schema.Title = res.Object.Name
+		res.Schema.Properties = make(map[string]swagger.Propertie)
+		propertie := constructObjectPropertie(t, res.PackageName, res.RealTypes, res.PathInfo)
+
+		res.Schema.Properties[res.Object.Name] = propertie
+	default:
+		ColorLog("[WARN][parseObject] %v type is not handled yet", t)
+		return
 	}
 
 	return
@@ -876,7 +889,7 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 		appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
 		return
 	default:
-		ColorLog("[WARN] %v type is not handled yet", f)
+		ColorLog("[WARN][constructObjectPropertie] %v type is not handled yet", f)
 		return
 	}
 }
@@ -959,14 +972,14 @@ func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map
 }
 
 // parseStruct parse a struct type object by iterating over all of the
-// fields and create swagger type and definitions out of it
-func parseStruct(m *swagger.Schema, structDef *ast.StructType, objectName string, packageName string, realTypes *[]string, pathInfo map[string]string, astPkgs map[string]*ast.Package) {
-	m.Title = objectName
+// fields and translate it into the swagger types and definitions.
+func (res *objectParserResource) parseStruct(structDef *ast.StructType) {
+	res.Schema.Title = res.Object.Name
 	if structDef.Fields.List != nil {
-		m.Properties = make(map[string]swagger.Propertie)
+		res.Schema.Properties = make(map[string]swagger.Propertie)
 		for _, field := range structDef.Fields.List {
 			propertie := constructObjectPropertie(
-				field.Type, packageName, realTypes, pathInfo,
+				field.Type, res.PackageName, res.RealTypes, res.PathInfo,
 			)
 			if field.Names != nil {
 
@@ -975,7 +988,7 @@ func parseStruct(m *swagger.Schema, structDef *ast.StructType, objectName string
 
 				// if no tag skip tag processing
 				if field.Tag == nil {
-					m.Properties[name] = propertie
+					res.Schema.Properties[name] = propertie
 					continue
 				}
 
@@ -1002,19 +1015,22 @@ func parseStruct(m *swagger.Schema, structDef *ast.StructType, objectName string
 						}
 					}
 					if required := stag.Get("required"); required != "" {
-						m.Required = append(m.Required, name)
+						res.Schema.Required = append(
+							res.Schema.Required,
+							name,
+						)
 					}
 					if desc := stag.Get("description"); desc != "" {
 						propertie.Description = desc
 					}
 
-					m.Properties[name] = propertie
+					res.Schema.Properties[name] = propertie
 				}
 				if ignore := stag.Get("ignore"); ignore != "" {
 					continue
 				}
 			} else {
-				for _, pkg := range astPkgs {
+				for _, pkg := range res.AstPkgs {
 					for _, fl := range pkg.Files {
 						pathInfo, err := generatePathInfo(fl)
 						if err != nil {
@@ -1022,9 +1038,12 @@ func parseStruct(m *swagger.Schema, structDef *ast.StructType, objectName string
 							os.Exit(1)
 						}
 
-						for nameOfObj, obj := range fl.Scope.Objects {
+						for _, obj := range fl.Scope.Objects {
 							if obj.Name == fmt.Sprint(field.Type) {
-								parseObject(obj, nameOfObj, m, realTypes, astPkgs, pkg.Name, pathInfo)
+								res.Object = obj
+								res.PackageName = pkg.Name
+								res.PathInfo = pathInfo
+								res.parseObject()
 							}
 						}
 					}
