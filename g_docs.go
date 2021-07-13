@@ -729,7 +729,7 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 	if len(rootapi.Definitions) == 0 {
 		rootapi.Definitions = make(map[string]swagger.Schema)
 	}
-	objectname = packageName + "." + objectname
+	objectname = objectWithPackageName(objectname, packageName)
 	rootapi.Definitions[objectname] = m
 	return
 }
@@ -822,7 +822,7 @@ func urlReplace(src string) string {
 	return strings.Join(pt, "/")
 }
 
-// constructObjectPropertie construct a swagger.Propertie out of
+// constructObjectPropertie constructs a swagger.Propertie out of
 // an ast.Expr. This function recursively traverse all expression
 // until it reaches an object or pre-defined basic golang type.
 func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]string, pathInfo map[string]string) (propertie swagger.Propertie) {
@@ -848,6 +848,7 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 		object := fmt.Sprint(f.X)
 		pkgObject := objectWithPackageName(object, packageName)
 		propertie.Ref = "#/definitions/" + pkgObject
+
 		appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
 		return
 	case *ast.ArrayType:
@@ -858,6 +859,12 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 		propertie.Items = &object
 		return
 	case *ast.MapType:
+
+		if fmt.Sprint(f.Key) != "string" {
+			ColorLog("[WARN][constructObjectPropertie] %v key is not string. OpenAPI only lets you define dictionaries where the keys are strings.", f.Key)
+			return
+		}
+
 		object := constructObjectPropertie(
 			f.Value, packageName, realTypes, pathInfo,
 		)
@@ -867,6 +874,12 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 	case *ast.StructType:
 		object := make(map[string]swagger.Propertie)
 		for _, v := range f.Fields.List {
+
+			if len(v.Names) == 0 {
+				ColorLog("[WARN][constructObjectPropertie] anonymous field is not supported yet for %+v", v)
+				continue
+			}
+
 			object[v.Names[0].Name] = constructObjectPropertie(
 				v.Type, packageName, realTypes, pathInfo,
 			)
@@ -875,15 +888,14 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 		propertie.Type = "object"
 		propertie.Properties = object
 		return
-	// type identity; eg. type anyType int64
-	case *ast.Ident:
+	case *ast.Ident: // type identity; eg. type anyType int64
 		return constructObjectPropertie(
 			f.Obj.Decl.(*ast.TypeSpec).Type,
 			packageName,
 			realTypes,
 			pathInfo,
 		)
-	case *ast.SelectorExpr:
+	case *ast.SelectorExpr: // cross package call; eg. strings.Contains
 		object := fmt.Sprint(f)
 		pkgObject := objectWithPackageName(object, packageName)
 		propertie.Ref = "#/definitions/" + pkgObject
@@ -902,6 +914,11 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 // the internal object comes with `object` format. In the latter
 // case we need to assign the current package name to the object.
 func objectWithPackageName(object, packageName string) string {
+
+	if packageName == "" && !strings.Contains(object, "&") {
+		return object
+	}
+
 	if len(strings.Split(object, " ")) == 1 {
 		return packageName + "." + object
 	}
@@ -954,9 +971,14 @@ func generatePathInfo(file *ast.File) (pathInfo map[string]string, err error) {
 	return
 }
 
-// appendObjectToRealTypes append an object with its full path
+// appendObjectToRealTypes appends an object with its full path
 // from the root package to *realTypes array.
 func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map[string]string) {
+	if !strings.Contains(pkgObject, ".") {
+		*realTypes = append(*realTypes, pkgObject)
+		return
+	}
+
 	pkgObjectSplit := strings.Split(pkgObject, ".")
 
 	if len(pkgObjectSplit) != 2 {
@@ -972,7 +994,7 @@ func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map
 	*realTypes = append(*realTypes, realType)
 }
 
-// parseStruct parse a struct type object by iterating over all of the
+// parseStruct parses a struct type object by iterating over all of the
 // fields and translate it into the swagger types and definitions.
 func (res *objectParserResource) parseStruct(structDef *ast.StructType) {
 	res.schema.Title = res.object.Name
