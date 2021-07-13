@@ -42,6 +42,7 @@ const (
 	axml   = "application/xml"
 	aplain = "text/plain"
 	ahtml  = "text/html"
+	aform  = "multipart/form-data"
 
 	content_type_thrift_binary_webcontent_v1 = "application/vnd.zalora.webcontent.v1+thrift.binary"
 	content_type_thrift_json_webcontent_v1   = "application/vnd.zalora.webcontent.v1+thrift.json"
@@ -49,12 +50,44 @@ const (
 	content_type_thrift_json                 = "application/vnd.apache.thrift.json"
 )
 
+// refer to builtin.go
+var basicTypes = map[string]string{
+	"bool":        "boolean:",
+	"uint":        "integer:int32",
+	"uint8":       "integer:int32",
+	"uint16":      "integer:int32",
+	"uint32":      "integer:int32",
+	"uint64":      "integer:int64",
+	"int":         "integer:int64",
+	"int8":        "integer:int32",
+	"int16:int32": "integer:int32",
+	"int32":       "integer:int32",
+	"int64":       "integer:int64",
+	"uintptr":     "integer:int64",
+	"float32":     "number:float",
+	"float64":     "number:double",
+	"string":      "string:",
+	"complex64":   "number:float",
+	"complex128":  "number:double",
+	"byte":        "string:byte",
+	"rune":        "string:byte",
+}
+
 var pkgCache map[string]struct{} //pkg:controller:function:comments comments: key:value
 var controllerComments map[string]string
 var importlist map[string]string
 var controllerList map[string]map[string]*swagger.Item //controllername Paths items
 var modelsList map[string]map[string]swagger.Schema
 var rootapi swagger.Swagger
+
+type objectParserResource struct {
+	object      *ast.Object
+	schema      *swagger.Schema
+	realTypes   *[]string
+	astPkgs     map[string]*ast.Package
+	packageName string
+	pathInfo    map[string]string
+}
 
 func init() {
 	pkgCache = make(map[string]struct{})
@@ -509,13 +542,20 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						typ = typ[2:]
 						isArray = true
 					}
+
 					if typ == "string" || typ == "number" || typ == "integer" || typ == "boolean" ||
-						typ == "array" || typ == "file" || typ == "enum" {
+						typ == "array" || typ == "file" {
 						paraType = typ
 					} else if sType, ok := basicTypes[typ]; ok {
 						typeFormat := strings.Split(sType, ":")
 						paraType = typeFormat[0]
 						paraFormat = typeFormat[1]
+					} else if typ == "enum" {
+						paraType = "string"
+						para.Enum = strings.Split(p[4], ",")
+						if len(p) > 6 {
+							para.Default = p[5]
+						}
 					} else {
 						ColorLog("[WARN][%s.%s] Unknow param type: %s\n", controllerName, funcName, typ)
 					}
@@ -530,18 +570,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						para.Format = paraFormat
 					}
 				}
-				if len(p) > 4 {
-					para.Required, _ = strconv.ParseBool(p[3])
-					if "enum" == strings.ToLower(typ) {
-						para.Enum = strings.Split(p[4], ",")
-						para.Default = p[5]
-					}
-				} else {
-					if "enum" == strings.ToLower(typ) {
-						para.Enum = strings.Split(p[3], ",")
-						para.Default = p[4]
-					}
-				}
+				para.Required, _ = strconv.ParseBool(p[3])
 				para.Description = strings.Trim(p[len(p)-1], `" `)
 				opts.Parameters = append(opts.Parameters, para)
 			} else if strings.HasPrefix(t, "@Failure") {
@@ -592,6 +621,8 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 					case "thrift_webcontent_json":
 						opts.Consumes = append(opts.Consumes, content_type_thrift_json_webcontent_v1)
 						opts.Produces = append(opts.Produces, content_type_thrift_json_webcontent_v1)
+					case "form":
+						opts.Consumes = append(opts.Consumes, aform)
 					}
 				}
 			}
@@ -680,16 +711,36 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 		ColorLog("[ERRO] the model %s parser.ParseDir error\n", str)
 		os.Exit(1)
 	}
+
+	var packageName string
 	m.Type = "object"
 	for _, pkg := range astPkgs {
 		for _, fl := range pkg.Files {
-			for k, d := range fl.Scope.Objects {
-				if d.Kind == ast.Typ {
-					if k != objectname {
-						continue
-					}
-					parseObject(d, k, &m, &realTypes, astPkgs)
+			pathInfo, err := generatePathInfo(fl)
+			if err != nil {
+				ColorLog("[ERRO] failed when generating path info: %v", err)
+				os.Exit(1)
+			}
+
+			for _, d := range fl.Scope.Objects {
+				if d.Kind != ast.Typ || d.Name != objectname {
+					continue
 				}
+
+				pathInfo[pkg.Name] = pkgpath
+
+				res := new(objectParserResource)
+				res.object = d
+				res.schema = &m
+				res.realTypes = &realTypes
+				res.astPkgs = astPkgs
+				res.packageName = pkg.Name
+				res.pathInfo = pathInfo
+				res.parseObject()
+
+				packageName = pkg.Name
+
+				break
 			}
 		}
 	}
@@ -701,143 +752,33 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 	if len(rootapi.Definitions) == 0 {
 		rootapi.Definitions = make(map[string]swagger.Schema)
 	}
+	objectname = objectWithPackageName(objectname, packageName)
 	rootapi.Definitions[objectname] = m
 	return
 }
 
-func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string, astPkgs map[string]*ast.Package) {
-	ts, ok := d.Decl.(*ast.TypeSpec)
+func (res *objectParserResource) parseObject() {
+	ts, ok := res.object.Decl.(*ast.TypeSpec)
 	if !ok {
-		ColorLog("Unknown type without TypeSec: %v\n", d)
+		ColorLog("Unknown type without TypeSec: %v\n", res.object)
 		os.Exit(1)
 	}
-	// TODO support other types, such as `ArrayType`, `MapType`, `InterfaceType` etc...
-	st, ok := ts.Type.(*ast.StructType)
-	if !ok {
+
+	switch t := ts.Type.(type) {
+	case *ast.StructType:
+		res.parseStruct(t)
+	case *ast.Ident, *ast.ArrayType:
+		res.schema.Title = res.object.Name
+		res.schema.Properties = make(map[string]swagger.Propertie)
+		propertie := constructObjectPropertie(t, res.packageName, res.realTypes, res.pathInfo)
+
+		res.schema.Properties[res.object.Name] = propertie
+	default:
+		ColorLog("[WARN][parseObject] %v type is not handled yet", t)
 		return
 	}
-	m.Title = k
-	if st.Fields.List != nil {
-		m.Properties = make(map[string]swagger.Propertie)
-		for _, field := range st.Fields.List {
-			isSlice, realType, sType := typeAnalyser(field)
-			*realTypes = append(*realTypes, realType)
-			mp := swagger.Propertie{}
-			if isSlice {
-				mp.Type = "array"
-				if isBasicType(realType) {
-					typeFormat := strings.Split(sType, ":")
-					mp.Items = &swagger.Propertie{
-						Type:   typeFormat[0],
-						Format: typeFormat[1],
-					}
-				} else {
-					mp.Items = &swagger.Propertie{
-						Ref: "#/definitions/" + realType,
-					}
-				}
-			} else {
-				if sType == "object" {
-					mp.Ref = "#/definitions/" + realType
-				} else if isBasicType(realType) {
-					typeFormat := strings.Split(sType, ":")
-					mp.Type = typeFormat[0]
-					mp.Format = typeFormat[1]
-				} else if realType == "map" {
-					typeFormat := strings.Split(sType, ":")
-					mp.AdditionalProperties = &swagger.Propertie{
-						Type:   typeFormat[0],
-						Format: typeFormat[1],
-					}
-				}
-			}
-			if field.Names != nil {
 
-				// set property name as field name
-				var name = field.Names[0].Name
-
-				// if no tag skip tag processing
-				if field.Tag == nil {
-					m.Properties[name] = mp
-					continue
-				}
-
-				var tagValues []string
-				stag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
-				tag := stag.Get("json")
-
-				if tag != "" {
-					tagValues = strings.Split(tag, ",")
-				}
-
-				// dont add property if json tag first value is "-"
-				if len(tagValues) == 0 || tagValues[0] != "-" {
-
-					// set property name to the left most json tag value only if is not omitempty
-					if len(tagValues) > 0 && tagValues[0] != "omitempty" {
-						name = tagValues[0]
-					}
-
-					if thrifttag := stag.Get("thrift"); thrifttag != "" {
-						ts := strings.Split(thrifttag, ",")
-						if ts[0] != "" {
-							name = ts[0]
-						}
-					}
-					if required := stag.Get("required"); required != "" {
-						m.Required = append(m.Required, name)
-					}
-					if desc := stag.Get("description"); desc != "" {
-						mp.Description = desc
-					}
-
-					m.Properties[name] = mp
-				}
-				if ignore := stag.Get("ignore"); ignore != "" {
-					continue
-				}
-			} else {
-				for _, pkg := range astPkgs {
-					for _, fl := range pkg.Files {
-						for nameOfObj, obj := range fl.Scope.Objects {
-							if obj.Name == fmt.Sprint(field.Type) {
-								parseObject(obj, nameOfObj, m, realTypes, astPkgs)
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-func typeAnalyser(f *ast.Field) (isSlice bool, realType, swaggerType string) {
-	if arr, ok := f.Type.(*ast.ArrayType); ok {
-		if isBasicType(fmt.Sprint(arr.Elt)) {
-			return false, fmt.Sprintf("[]%v", arr.Elt), basicTypes[fmt.Sprint(arr.Elt)]
-		}
-		if mp, ok := arr.Elt.(*ast.MapType); ok {
-			return false, fmt.Sprintf("map[%v][%v]", mp.Key, mp.Value), "object"
-		}
-		if star, ok := arr.Elt.(*ast.StarExpr); ok {
-			return true, fmt.Sprint(star.X), "object"
-		}
-		return true, fmt.Sprint(arr.Elt), "object"
-	}
-	switch t := f.Type.(type) {
-	case *ast.StarExpr:
-		return false, fmt.Sprint(t.X), "object"
-	case *ast.MapType:
-		val := fmt.Sprintf("%v", t.Value)
-		if isBasicType(val) {
-			return false, "map", basicTypes[val]
-		}
-		return false, val, "object"
-	}
-	if k, ok := basicTypes[fmt.Sprint(f.Type)]; ok {
-		return false, fmt.Sprint(f.Type), k
-	}
-	return false, fmt.Sprint(f.Type), "object"
+	return
 }
 
 func isBasicType(Type string) bool {
@@ -845,18 +786,6 @@ func isBasicType(Type string) bool {
 		return true
 	}
 	return false
-}
-
-// refer to builtin.go
-var basicTypes = map[string]string{
-	"bool": "boolean:",
-	"uint": "integer:int32", "uint8": "integer:int32", "uint16": "integer:int32", "uint32": "integer:int32", "uint64": "integer:int64",
-	"int": "integer:int64", "int8": "integer:int32", "int16:int32": "integer:int32", "int32": "integer:int32", "int64": "integer:int64",
-	"uintptr": "integer:int64",
-	"float32": "number:float", "float64": "number:double",
-	"string":    "string:",
-	"complex64": "number:float", "complex128": "number:double",
-	"byte": "string:byte", "rune": "string:byte",
 }
 
 // regexp get json tag
@@ -883,9 +812,8 @@ func appendModels(cmpath, pkgpath, controllerName string, realTypes []string) {
 			if _, ok := modelsList[pkgpath+controllerName][p+realType]; ok {
 				continue
 			}
-			//fmt.Printf(pkgpath + ":" + controllerName + ":" + cmpath + ":" + realType + "\n")
-			_, _, mod, newRealTypes := getModel(p + realType)
-			modelsList[pkgpath+controllerName][p+realType] = mod
+			_, _, mod, newRealTypes := getModel(realType)
+			modelsList[pkgpath+controllerName][realType] = mod
 			appendModels(cmpath, pkgpath, controllerName, newRealTypes)
 		}
 	}
@@ -903,4 +831,258 @@ func urlReplace(src string) string {
 		}
 	}
 	return strings.Join(pt, "/")
+}
+
+// constructObjectPropertie constructs a swagger.Propertie out of
+// an ast.Expr. This function recursively traverse all expression
+// until it reaches an object or pre-defined basic golang type.
+func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]string, pathInfo map[string]string) (propertie swagger.Propertie) {
+
+	// basic Go type can be directly translated into swagger type
+	// with pre-defined mapping
+	if basicType, ok := basicTypes[fmt.Sprint(field)]; ok {
+		propInfo := strings.Split(basicType, ":")
+
+		if len(propInfo) != 2 {
+			ColorLog("[ERRO] basicTypes const is not properly configured for %v", field)
+			os.Exit(1)
+		}
+
+		propertie.Type = propInfo[0]
+		propertie.Format = propInfo[1]
+
+		return
+	}
+
+	switch f := field.(type) {
+	case *ast.StarExpr:
+		object := fmt.Sprint(f.X)
+		pkgObject := objectWithPackageName(object, packageName)
+		propertie.Ref = "#/definitions/" + pkgObject
+
+		appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
+		return
+	case *ast.ArrayType:
+		object := constructObjectPropertie(
+			f.Elt, packageName, realTypes, pathInfo,
+		)
+		propertie.Type = "array"
+		propertie.Items = &object
+		return
+	case *ast.MapType:
+
+		if fmt.Sprint(f.Key) != "string" {
+			ColorLog("[WARN][constructObjectPropertie] %v key is not string. OpenAPI only lets you define dictionaries where the keys are strings.", f.Key)
+			return
+		}
+
+		object := constructObjectPropertie(
+			f.Value, packageName, realTypes, pathInfo,
+		)
+		propertie.Type = "object"
+		propertie.AdditionalProperties = &object
+		return
+	case *ast.StructType:
+		object := make(map[string]swagger.Propertie)
+		for _, v := range f.Fields.List {
+
+			if len(v.Names) == 0 {
+				ColorLog("[WARN][constructObjectPropertie] anonymous field is not supported yet for %+v", v)
+				continue
+			}
+
+			object[v.Names[0].Name] = constructObjectPropertie(
+				v.Type, packageName, realTypes, pathInfo,
+			)
+		}
+
+		propertie.Type = "object"
+		propertie.Properties = object
+		return
+	case *ast.Ident: // type identity; eg. type anyType int64
+		return constructObjectPropertie(
+			f.Obj.Decl.(*ast.TypeSpec).Type,
+			packageName,
+			realTypes,
+			pathInfo,
+		)
+	case *ast.SelectorExpr: // cross package call; eg. strings.Contains
+		object := fmt.Sprint(f)
+		pkgObject := objectWithPackageName(object, packageName)
+		propertie.Ref = "#/definitions/" + pkgObject
+		appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
+		return
+	default:
+		ColorLog("[WARN][constructObjectPropertie] %v type is not handled yet", f)
+		return
+	}
+}
+
+// objectWithPackageName returns an object with package name in format
+// packageName.Object. There are two types of object that can be identified
+// by ast, the internal and imported objects.
+// The imported object comes with `&{PackageName Object}` format and
+// the internal object comes with `object` format. In the latter
+// case we need to assign the current package name to the object.
+func objectWithPackageName(object, packageName string) string {
+
+	if packageName == "" && !strings.Contains(object, "&") {
+		return object
+	}
+
+	if len(strings.Split(object, " ")) == 1 {
+		return packageName + "." + object
+	}
+
+	object = strings.Replace(object, " ", ".", -1)
+	object = strings.Replace(object, "&", "", -1)
+	object = strings.Replace(object, "{", "", -1)
+	object = strings.Replace(object, "}", "", -1)
+
+	return object
+}
+
+// generatePathInfo generates all imported packages in a file into a map.
+// the name of the package will be used as the map key, and the path
+// to the package will be used as the map value.
+func generatePathInfo(file *ast.File) (pathInfo map[string]string, err error) {
+	pathInfo = make(map[string]string)
+	goSrcPath := os.Getenv("GOPATH") + "/src/"
+
+	// currentPath of where the `bee` is run
+	currentPath, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	// basePath is the currentPath without GOPATH + src prefix
+	// eg. github.com/organization/repository/
+	basePath := strings.Replace(currentPath, goSrcPath, "", -1)
+
+	var importPath string
+	for _, v := range file.Imports {
+		importPath = strings.Trim(v.Path.Value, "\"")
+		if !strings.HasPrefix(importPath, basePath) {
+			continue
+		}
+		importPath = strings.Replace(importPath, basePath, "", -1)
+
+		// if the imported package is named, then use the name for key
+		if v.Name != nil {
+			pathInfo[v.Name.Name] = importPath
+			continue
+		}
+
+		packageNames := strings.Split(importPath, "/")
+		name := packageNames[len(packageNames)-1]
+
+		pathInfo[name] = importPath
+	}
+
+	return
+}
+
+// appendObjectToRealTypes appends an object with its full path
+// from the root package to *realTypes array.
+func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map[string]string) {
+	if !strings.Contains(pkgObject, ".") {
+		*realTypes = append(*realTypes, pkgObject)
+		return
+	}
+
+	pkgObjectSplit := strings.Split(pkgObject, ".")
+
+	if len(pkgObjectSplit) != 2 {
+		ColorLog("[WARN] %v pkgObject passed to realTypes length should be 2", pkgObjectSplit)
+		return
+	}
+
+	pkg := pkgObjectSplit[0]
+	object := pkgObjectSplit[1]
+
+	realType := pathInfo[pkg] + "." + object
+	realType = strings.Replace(realType, "/", ".", -1)
+	*realTypes = append(*realTypes, realType)
+}
+
+// parseStruct parses a struct type object by iterating over all of the
+// fields and translate it into the swagger types and definitions.
+func (res *objectParserResource) parseStruct(structDef *ast.StructType) {
+	res.schema.Title = res.object.Name
+	if structDef.Fields.List != nil {
+		res.schema.Properties = make(map[string]swagger.Propertie)
+		for _, field := range structDef.Fields.List {
+			propertie := constructObjectPropertie(
+				field.Type, res.packageName, res.realTypes, res.pathInfo,
+			)
+			if field.Names != nil {
+
+				// set property name as field name
+				var name = field.Names[0].Name
+
+				// if no tag skip tag processing
+				if field.Tag == nil {
+					res.schema.Properties[name] = propertie
+					continue
+				}
+
+				var tagValues []string
+				stag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
+				tag := stag.Get("json")
+
+				if tag != "" {
+					tagValues = strings.Split(tag, ",")
+				}
+
+				// dont add property if json tag first value is "-"
+				if len(tagValues) == 0 || tagValues[0] != "-" {
+
+					// set property name to the left most json tag value only if is not omitempty
+					if len(tagValues) > 0 && tagValues[0] != "omitempty" {
+						name = tagValues[0]
+					}
+
+					if thrifttag := stag.Get("thrift"); thrifttag != "" {
+						ts := strings.Split(thrifttag, ",")
+						if ts[0] != "" {
+							name = ts[0]
+						}
+					}
+					if required := stag.Get("required"); required != "" {
+						res.schema.Required = append(
+							res.schema.Required,
+							name,
+						)
+					}
+					if desc := stag.Get("description"); desc != "" {
+						propertie.Description = desc
+					}
+
+					res.schema.Properties[name] = propertie
+				}
+				if ignore := stag.Get("ignore"); ignore != "" {
+					continue
+				}
+			} else {
+				for _, pkg := range res.astPkgs {
+					for _, fl := range pkg.Files {
+						pathInfo, err := generatePathInfo(fl)
+						if err != nil {
+							ColorLog("[ERRO] failed generating path info: %v", err)
+							os.Exit(1)
+						}
+
+						for _, obj := range fl.Scope.Objects {
+							if obj.Name == fmt.Sprint(field.Type) {
+								res.object = obj
+								res.packageName = pkg.Name
+								res.pathInfo = pathInfo
+								res.parseObject()
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }

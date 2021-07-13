@@ -10,5 +10,6 @@ require (
 	github.com/howeyc/fsnotify v0.9.0
 	github.com/lib/pq v1.7.0
 	github.com/smartystreets/goconvey v1.6.4
+	github.com/stretchr/testify v1.7.0
 	gopkg.in/yaml.v2 v2.3.0
 )
