@@ -2,6 +2,8 @@ package main
 
 import (
 	"go/ast"
+	"go/parser"
+	"go/token"
 	"testing"
 
 	"github.com/astaxie/beego/swagger"
@@ -241,6 +243,98 @@ func Test_ConstructObjectPropertie(t *testing.T) {
 
 			assert.Equal(t, tt.expected, sub)
 			assert.Equal(t, tt.expectedRealTypes, tt.realTypes)
+		})
+	}
+}
+
+func Test_generatePathInfo(t *testing.T) {
+	tests := []struct {
+		description string
+		src         string
+		expected    map[string]string
+		isError     assert.ErrorAssertionFunc
+	}{
+		{
+			description: "no imported package",
+			src: string(`
+			package main
+			
+			func main() {
+				a := 1 + 1
+			}
+			`),
+			expected: map[string]string{},
+			isError:  assert.NoError,
+		},
+		{
+			description: "non internal imported packages",
+			src: string(`
+			package main
+			
+			import (
+				"fmt"
+				"encoding/json"
+			)
+			
+			func main() {
+				a := 1 + 1
+			}
+			`),
+			expected: map[string]string{},
+			isError:  assert.NoError,
+		},
+		{
+			description: "internal imported packages",
+			src: string(`
+			package main
+			
+			import (
+				"github.com/zalora/bee/packageA"
+				"github.com/zalora/bee/packageB/packageBA"
+			)
+			
+			func main() {
+				a := 1 + 1
+			}
+			`),
+			expected: map[string]string{
+				"packageA":  "/packageA",
+				"packageBA": "/packageB/packageBA",
+			},
+			isError: assert.NoError,
+		},
+		{
+			description: "with named internal package",
+			src: string(`
+			package main
+			
+			import (
+				"github.com/zalora/bee/packageA"
+				packageC "github.com/zalora/bee/packageB/packageBA"
+			)
+			
+			func main() {
+				a := 1 + 1
+			}
+			`),
+			expected: map[string]string{
+				"packageA": "/packageA",
+				"packageC": "/packageB/packageBA",
+			},
+			isError: assert.NoError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			f, err := parser.ParseFile(token.NewFileSet(), "", tt.src, 0)
+			if err != nil {
+				t.Errorf("parser.ParseFile() invalid src = %v", tt.src)
+			}
+
+			sub, err := generatePathInfo(f)
+			assert.Equal(t, tt.expected, sub)
+			tt.isError(t, err)
 		})
 	}
 }
