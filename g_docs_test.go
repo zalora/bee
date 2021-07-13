@@ -146,7 +146,7 @@ func Test_ConstructObjectPropertie(t *testing.T) {
 					Name: "int64",
 				},
 				Value: &structAstRepresentation,
-			},
+			}, // map[int64]structName{}
 			realTypes:         []string{},
 			pathInfo:          map[string]string{},
 			expected:          swagger.Propertie{},
@@ -159,7 +159,7 @@ func Test_ConstructObjectPropertie(t *testing.T) {
 					Name: "string", // TODO: map with non-string key
 				},
 				Value: &structAstRepresentation,
-			},
+			}, // map[string]structName{}
 			realTypes: []string{},
 			pathInfo:  map[string]string{},
 			expected: swagger.Propertie{
@@ -213,7 +213,7 @@ func Test_ConstructObjectPropertie(t *testing.T) {
 				Sel: &ast.Ident{
 					Name: "object",
 				},
-			},
+			}, // package.object()
 			realTypes: []string{},
 			pathInfo: map[string]string{
 				"package": "outerpackage/package",
