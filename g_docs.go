@@ -80,7 +80,7 @@ var controllerList map[string]map[string]*swagger.Item //controllername Paths it
 var modelsList map[string]map[string]swagger.Schema
 var rootapi swagger.Swagger
 
-type objectParserResource struct {
+type objectResource struct {
 	object      *ast.Object
 	schema      *swagger.Schema
 	realTypes   *[]string
@@ -729,7 +729,7 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 
 				pathInfo[pkg.Name] = pkgpath
 
-				res := new(objectParserResource)
+				res := new(objectResource)
 				res.object = d
 				res.schema = &m
 				res.realTypes = &realTypes
@@ -757,7 +757,7 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 	return
 }
 
-func (res *objectParserResource) parseObject() {
+func (res *objectResource) parseObject() {
 	ts, ok := res.object.Decl.(*ast.TypeSpec)
 	if !ok {
 		ColorLog("Unknown type without TypeSec: %v\n", res.object)
@@ -1007,7 +1007,7 @@ func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map
 
 // parseStruct parses a struct type object by iterating over all of the
 // fields and translate it into the swagger types and definitions.
-func (res *objectParserResource) parseStruct(structDef *ast.StructType) {
+func (res *objectResource) parseStruct(structDef *ast.StructType) {
 	res.schema.Title = res.object.Name
 	if structDef.Fields.List != nil {
 		res.schema.Properties = make(map[string]swagger.Propertie)

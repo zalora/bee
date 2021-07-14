@@ -65,7 +65,7 @@ var structAstRepresentation = ast.StructType{
 	},
 } // type structName struct { fieldName string; fieldName2 int64; }
 
-func Test_ConstructObjectPropertie(t *testing.T) {
+func Test_constructObjectPropertie(t *testing.T) {
 	tests := []struct {
 		description       string
 		field             ast.Expr
