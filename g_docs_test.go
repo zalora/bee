@@ -36,6 +36,10 @@ var structAstRepresentation = ast.StructType{
 				Type: &ast.Ident{
 					Name: "string",
 				},
+				Tag: &ast.BasicLit{
+					Kind:  token.STRING,
+					Value: "field_name,omitempty",
+				},
 			},
 			{
 				Names: []*ast.Ident{
@@ -60,7 +64,7 @@ var structAstRepresentation = ast.StructType{
 				Type: &ast.Ident{
 					Name: "int64",
 				},
-			},
+			}, // field without a tag
 		},
 	},
 } // type structName struct { fieldName string; fieldName2 int64; }
@@ -258,7 +262,7 @@ func Test_generatePathInfo(t *testing.T) {
 			description: "no imported package",
 			src: string(`
 			package main
-			
+
 			func main() {
 				a := 1 + 1
 			}
@@ -270,12 +274,12 @@ func Test_generatePathInfo(t *testing.T) {
 			description: "non internal imported packages",
 			src: string(`
 			package main
-			
+
 			import (
 				"fmt"
 				"encoding/json"
 			)
-			
+
 			func main() {
 				a := 1 + 1
 			}
@@ -287,12 +291,12 @@ func Test_generatePathInfo(t *testing.T) {
 			description: "internal imported packages",
 			src: string(`
 			package main
-			
+
 			import (
 				"github.com/zalora/bee/packageA"
 				"github.com/zalora/bee/packageB/packageBA"
 			)
-			
+
 			func main() {
 				a := 1 + 1
 			}
@@ -307,12 +311,12 @@ func Test_generatePathInfo(t *testing.T) {
 			description: "with named internal package",
 			src: string(`
 			package main
-			
+
 			import (
 				"github.com/zalora/bee/packageA"
 				packageC "github.com/zalora/bee/packageB/packageBA"
 			)
-			
+
 			func main() {
 				a := 1 + 1
 			}
@@ -335,6 +339,103 @@ func Test_generatePathInfo(t *testing.T) {
 			sub, err := generatePathInfo(f)
 			assert.Equal(t, tt.expected, sub)
 			tt.isError(t, err)
+		})
+	}
+}
+
+func Test_parseObject(t *testing.T) {
+	tests := []struct {
+		description       string
+		res               *objectResource
+		expectedSchema    *swagger.Schema
+		expectedRealTypes *[]string
+	}{
+		{
+			description: "parse struct",
+			res: &objectResource{
+				object: &ast.Object{
+					Kind: ast.Typ,
+					Name: "structObject",
+					Decl: &ast.TypeSpec{
+						Name: &ast.Ident{
+							Name: "structObject",
+						},
+						Type: &structAstRepresentation,
+					},
+				},
+				schema:    &swagger.Schema{},
+				realTypes: &[]string{},
+			},
+			expectedSchema: &swagger.Schema{
+				Title: "structObject",
+				Properties: map[string]swagger.Propertie{
+					"fieldName": {
+						Type: "string",
+					},
+					"fieldName2": {
+						Type:   "integer",
+						Format: "int64",
+					},
+				},
+			},
+			expectedRealTypes: &[]string{},
+		},
+		{
+			description: "identifier type",
+			res: &objectResource{
+				object: &ast.Object{
+					Kind: ast.Typ,
+					Name: "anyType",
+					Decl: &ast.TypeSpec{
+						Name: &ast.Ident{
+							Name: "anyType",
+						},
+						Type: &ast.Ident{
+							Name: "int64",
+						},
+					},
+				}, // type anyType int64
+				schema:    &swagger.Schema{},
+				realTypes: &[]string{},
+			},
+			expectedSchema: &swagger.Schema{
+				Title: "anyType",
+				Properties: map[string]swagger.Propertie{
+					"anyType": {
+						Type:   "integer",
+						Format: "int64",
+					},
+				},
+			},
+			expectedRealTypes: &[]string{},
+		},
+		{
+			description: "unhandled type",
+			res: &objectResource{
+				object: &ast.Object{
+					Kind: ast.Typ,
+					Name: "anyType",
+					Decl: &ast.TypeSpec{
+						Name: &ast.Ident{
+							Name: "anyType",
+						},
+						Type: &ast.FuncType{},
+					},
+				}, // type anyType int64
+				schema:    &swagger.Schema{},
+				realTypes: &[]string{},
+			},
+			expectedSchema:    &swagger.Schema{},
+			expectedRealTypes: &[]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			tt.res.parseObject()
+
+			assert.Equal(t, tt.expectedSchema, tt.res.schema)
+			assert.Equal(t, tt.expectedRealTypes, tt.res.realTypes)
 		})
 	}
 }
