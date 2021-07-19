@@ -50,7 +50,7 @@ const (
 	content_type_thrift_json                 = "application/vnd.apache.thrift.json"
 )
 
-// refer to builtin.go
+// refer to builtin.go.
 var basicTypes = map[string]string{
 	"bool":        "boolean:",
 	"uint":        "integer:int32",
@@ -244,7 +244,7 @@ func analisysNewNamespace(ce *ast.CallExpr) (first string, others []ast.Expr) {
 	return
 }
 
-func analisysNSInclude(baseurl string, ce *ast.CallExpr) string {
+func analisysNSInclude(baseURL string, ce *ast.CallExpr) string {
 	cname := ""
 	for _, p := range ce.Args {
 		x := p.(*ast.UnaryExpr).X.(*ast.CompositeLit).Type.(*ast.SelectorExpr)
@@ -252,40 +252,29 @@ func analisysNSInclude(baseurl string, ce *ast.CallExpr) string {
 			cname = v + x.Sel.Name
 		}
 		if apis, ok := controllerList[cname]; ok {
-			for rt, item := range apis {
-				tag := ""
-				if baseurl != "" {
-					rt = baseurl + rt
-					tag = strings.Trim(baseurl, "/")
-				} else {
-					tag = cname
+			for route, item := range apis {
+				tag := cname
+				if baseURL != "" {
+					route = baseURL + route
+					tag = strings.Trim(baseURL, "/")
 				}
-				if item.Get != nil {
-					item.Get.Tags = append(item.Get.Tags, tag)
+
+				// replicate item to make referenced value untouched
+				// because if the endpoint shares the same controller with another
+				// endpoints the referenced value might be used again.
+				replicatedItem, err := replicateSwaggerItem(item)
+				if err != nil {
+					ColorLog("[ERRO] failed replicating swagger item, got: %s\n", err)
+					os.Exit(1)
 				}
-				if item.Post != nil {
-					item.Post.Tags = append(item.Post.Tags, tag)
-				}
-				if item.Put != nil {
-					item.Put.Tags = append(item.Put.Tags, tag)
-				}
-				if item.Patch != nil {
-					item.Patch.Tags = append(item.Patch.Tags, tag)
-				}
-				if item.Head != nil {
-					item.Head.Tags = append(item.Head.Tags, tag)
-				}
-				if item.Delete != nil {
-					item.Delete.Tags = append(item.Delete.Tags, tag)
-				}
-				if item.Options != nil {
-					item.Options.Tags = append(item.Options.Tags, tag)
-				}
+
+				enrichItem(replicatedItem, tag, route)
+
 				if len(rootapi.Paths) == 0 {
 					rootapi.Paths = make(map[string]*swagger.Item)
 				}
-				rt = urlReplace(rt)
-				rootapi.Paths[rt] = item
+				route = urlReplace(route)
+				rootapi.Paths[route] = replicatedItem
 			}
 		}
 	}
@@ -1083,6 +1072,73 @@ func (res *objectResource) parseStruct(structDef *ast.StructType) {
 					}
 				}
 			}
+		}
+	}
+}
+
+// deepCopy copies all fields in an interface recursively.
+func deepCopy(value interface{}) (interface{}, error) {
+
+	// deep copy value of a nil is still a nil with a different pointer.
+	if value == nil {
+		return nil, nil
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+
+	vPtr := reflect.New(reflect.TypeOf(value))
+	err = json.Unmarshal(data, vPtr.Interface())
+	if err != nil {
+		return nil, err
+	}
+	return vPtr.Elem().Interface(), nil
+}
+
+// replicateSwaggerItem replicates a *swagger.Item struct using deepcopy then
+// casting it back to *swagger.Item.
+func replicateSwaggerItem(item *swagger.Item) (*swagger.Item, error) {
+	copiedItem, err := deepCopy(item)
+	if err != nil {
+		return nil, err
+	}
+
+	swaggerItem, ok := copiedItem.(*swagger.Item)
+	if !ok {
+		return nil, fmt.Errorf("Failed to cast item to *swagger.Item")
+	}
+
+	return swaggerItem, nil
+}
+
+// enrichItem enriches methods listed in *swagger.Item with tag and route data.
+func enrichItem(item *swagger.Item, tag, route string) {
+	v := reflect.ValueOf(item).Elem()
+	fields := make([]interface{}, v.NumField())
+
+	// Iterate through all `methods` in *swagger.Item,
+	// append tag and endpoint route to make all operationIDs unique
+	// methods: Get, Put, Post, etc.
+	for i := 0; i < v.NumField(); i++ {
+		fields[i] = v.Field(i).Interface()
+
+		// Skip non-method fields.
+		method, ok := fields[i].(*swagger.Operation)
+		if !ok {
+			continue
+		}
+
+		// current method is not used by the endpoint.
+		if method == nil {
+			continue
+		}
+
+		method.Tags = append(method.Tags, tag)
+
+		if method.OperationID != "" {
+			method.OperationID = route + "." + method.OperationID
 		}
 	}
 }
