@@ -568,7 +568,7 @@ func TestEnrichItem(t *testing.T) {
 				Ref: "Reference#1",
 				Get: &swagger.Operation{
 					Tags:        []string{"cart"},
-					OperationID: "/cart.Controller.Get Update Cart",
+					OperationID: "cart.Controller.Get Update Cart",
 				},
 			},
 		},
@@ -591,5 +591,35 @@ func TestEnrichItem(t *testing.T) {
 
 			assert.Equal(t, tt.expectedItem, tt.item)
 		})
+	}
+}
+
+func TestOperationIDFormat(t *testing.T) {
+	tests := []struct {
+		description   string
+		value         string
+		expectedValue string
+	}{
+		{
+			description:   "already in operationID format",
+			value:         "post.endpoint",
+			expectedValue: "post.endpoint",
+		},
+		{
+			description:   "value with trailing slash",
+			value:         "post/endpoint/",
+			expectedValue: "post.endpoint",
+		},
+		{
+			description:   "value with leading and trailing slash",
+			value:         "/post/endpoint/",
+			expectedValue: "post.endpoint",
+		},
+	}
+
+	for _, tt := range tests {
+		sub := operationIDFormat(tt.value)
+
+		assert.Equal(t, tt.expectedValue, sub)
 	}
 }

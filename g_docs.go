@@ -1137,8 +1137,17 @@ func enrichItem(item *swagger.Item, tag, route string) {
 
 		method.Tags = append(method.Tags, tag)
 
+		// OperationID is optional and can be missing if @Title is not set
 		if method.OperationID != "" {
-			method.OperationID = route + "." + method.OperationID
+			method.OperationID = operationIDFormat(route) + "." + method.OperationID
 		}
 	}
+}
+
+// operationIDFormat transforms a string into a general format used in OperationID
+func operationIDFormat(value string) string {
+	value = strings.Trim(value, "/")
+	value = strings.Replace(value, "/", ".", -1)
+
+	return value
 }
