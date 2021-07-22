@@ -705,15 +705,15 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 	m.Type = "object"
 	for _, pkg := range astPkgs {
 		for _, fl := range pkg.Files {
-			pathInfo, err := generatePathInfo(fl)
-			if err != nil {
-				ColorLog("[ERRO] failed when generating path info: %v", err)
-				os.Exit(1)
-			}
-
 			for _, d := range fl.Scope.Objects {
 				if d.Kind != ast.Typ || d.Name != objectname {
 					continue
+				}
+
+				pathInfo, err := generatePathInfo(fl)
+				if err != nil {
+					ColorLog("[ERRO] failed when generating path info: %v", err)
+					os.Exit(1)
 				}
 
 				pathInfo[pkg.Name] = pkgpath
@@ -880,9 +880,45 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 				continue
 			}
 
-			object[v.Names[0].Name] = constructObjectPropertie(
+			fieldPropertie := constructObjectPropertie(
 				v.Type, packageName, realTypes, pathInfo,
 			)
+
+			var name = v.Names[0].Name
+			if v.Tag == nil {
+				object[name] = fieldPropertie
+				continue
+			}
+
+			structTag := reflect.StructTag(strings.Trim(v.Tag.Value, "`"))
+
+			jsonTag := structTag.Get("json")
+			jsonTagValues := strings.Split(jsonTag, ",")
+
+			// skip property with `-` tag
+			if len(jsonTagValues) > 0 && jsonTagValues[0] == "-" {
+				continue
+			}
+
+			if len(jsonTagValues) > 0 && jsonTagValues[0] != "omitempty" {
+				name = jsonTagValues[0]
+			}
+
+			thriftTag := structTag.Get("thrift")
+			thriftTagValues := strings.Split(thriftTag, ",")
+			if len(thriftTagValues) > 0 && thriftTagValues[0] != "" {
+				name = thriftTagValues[0]
+			}
+
+			if required := structTag.Get("required"); required != "" {
+				propertie.Required = append(propertie.Required, name)
+			}
+
+			if desc := structTag.Get("description"); desc != "" {
+				propertie.Description = desc
+			}
+
+			object[name] = fieldPropertie
 		}
 
 		propertie.Type = "object"
@@ -944,24 +980,29 @@ func generatePathInfo(file *ast.File) (pathInfo map[string]string, err error) {
 		return
 	}
 
-	// basePath is the currentPath without GOPATH + src prefix
+	// basePath is the currentPath without GOPATH + src prefix.
 	// eg. github.com/organization/repository/
 	basePath := strings.Replace(currentPath, goSrcPath, "", -1)
 
 	var importPath string
 	for _, v := range file.Imports {
+
+		// skip if the importPath is from external package.
 		importPath = strings.Trim(v.Path.Value, "\"")
 		if !strings.HasPrefix(importPath, basePath) {
 			continue
 		}
 		importPath = strings.Replace(importPath, basePath, "", -1)
 
-		// if the imported package is named, then use the name for key
+		// if the imported package is named, then use the name for key.
+		// eg. util "github.com/astaxie/beego/utils"
 		if v.Name != nil {
 			pathInfo[v.Name.Name] = importPath
 			continue
 		}
 
+		// for unnamed imported package.
+		// eg. "github.com/astaxie/beego/utils"
 		packageNames := strings.Split(importPath, "/")
 		name := packageNames[len(packageNames)-1]
 
