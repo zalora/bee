@@ -754,14 +754,14 @@ func (res *objectResource) parseObject() {
 	}
 
 	switch t := ts.Type.(type) {
-	case *ast.StructType:
-		res.parseStruct(t)
-	case *ast.Ident, *ast.ArrayType:
+	case *ast.StructType, *ast.Ident:
 		res.schema.Title = res.object.Name
-		res.schema.Properties = make(map[string]swagger.Propertie)
-		propertie := constructObjectPropertie(t, res.packageName, res.realTypes, res.pathInfo)
-
-		res.schema.Properties[res.object.Name] = propertie
+		propertie := constructObjectPropertie(
+			ts.Type, res.packageName, res.realTypes, res.pathInfo,
+		)
+		res.schema.Properties = propertie.Properties
+		res.schema.Type = propertie.Type
+		res.schema.Format = propertie.Format
 	default:
 		ColorLog("[WARN][parseObject] %v type is not handled yet", t)
 		return
@@ -788,6 +788,7 @@ func grepJSONTag(tag string) string {
 }
 
 // append models
+// TODO: remove cmpath
 func appendModels(cmpath, pkgpath, controllerName string, realTypes []string) {
 	var p string
 	if cmpath != "" {
@@ -874,50 +875,36 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 	case *ast.StructType:
 		object := make(map[string]swagger.Propertie)
 		for _, v := range f.Fields.List {
-
-			if len(v.Names) == 0 {
-				ColorLog("[WARN][constructObjectPropertie] anonymous field is not supported yet for %+v", v)
-				continue
-			}
-
 			fieldPropertie := constructObjectPropertie(
 				v.Type, packageName, realTypes, pathInfo,
 			)
 
-			var name = v.Names[0].Name
+			// if field is unnamed, expand field.
+			// TODO: test with real unnamed field
+			if len(v.Names) == 0 {
+				for name, p := range fieldPropertie.Properties {
+					object[name] = p
+				}
+				continue
+			}
+
+			// if no tag found, skip tag processing.
 			if v.Tag == nil {
+				name := v.Names[0].Name
 				object[name] = fieldPropertie
 				continue
 			}
 
-			structTag := reflect.StructTag(strings.Trim(v.Tag.Value, "`"))
-
-			jsonTag := structTag.Get("json")
-			jsonTagValues := strings.Split(jsonTag, ",")
-
-			// skip property with `-` tag
-			if len(jsonTagValues) > 0 && jsonTagValues[0] == "-" {
+			name, err := fieldNameFromTag(v.Tag.Value)
+			if err != nil {
 				continue
 			}
 
-			if len(jsonTagValues) > 0 && jsonTagValues[0] != "omitempty" {
-				name = jsonTagValues[0]
+			if name == "" {
+				name = v.Names[0].Name
 			}
 
-			thriftTag := structTag.Get("thrift")
-			thriftTagValues := strings.Split(thriftTag, ",")
-			if len(thriftTagValues) > 0 && thriftTagValues[0] != "" {
-				name = thriftTagValues[0]
-			}
-
-			if required := structTag.Get("required"); required != "" {
-				propertie.Required = append(propertie.Required, name)
-			}
-
-			if desc := structTag.Get("description"); desc != "" {
-				propertie.Description = desc
-			}
-
+			setFieldPropertieMetadata(&fieldPropertie, v.Tag.Value, name)
 			object[name] = fieldPropertie
 		}
 
@@ -1030,91 +1017,14 @@ func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map
 	pkg := pkgObjectSplit[0]
 	object := pkgObjectSplit[1]
 
-	realType := pathInfo[pkg] + "." + object
+	realType := object
+	if v, ok := pathInfo[pkg]; ok && v != "" {
+		realType = v + "." + object
+	}
+
+	realType = strings.Trim(realType, "/")
 	realType = strings.Replace(realType, "/", ".", -1)
 	*realTypes = append(*realTypes, realType)
-}
-
-// parseStruct parses a struct type object by iterating over all of the
-// fields and translate it into the swagger types and definitions.
-func (res *objectResource) parseStruct(structDef *ast.StructType) {
-	res.schema.Title = res.object.Name
-	if structDef.Fields.List != nil {
-		res.schema.Properties = make(map[string]swagger.Propertie)
-		for _, field := range structDef.Fields.List {
-			propertie := constructObjectPropertie(
-				field.Type, res.packageName, res.realTypes, res.pathInfo,
-			)
-			if field.Names != nil {
-
-				// set property name as field name
-				var name = field.Names[0].Name
-
-				// if no tag skip tag processing
-				if field.Tag == nil {
-					res.schema.Properties[name] = propertie
-					continue
-				}
-
-				var tagValues []string
-				stag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
-				tag := stag.Get("json")
-
-				if tag != "" {
-					tagValues = strings.Split(tag, ",")
-				}
-
-				// dont add property if json tag first value is "-"
-				if len(tagValues) == 0 || tagValues[0] != "-" {
-
-					// set property name to the left most json tag value only if is not omitempty
-					if len(tagValues) > 0 && tagValues[0] != "omitempty" {
-						name = tagValues[0]
-					}
-
-					if thrifttag := stag.Get("thrift"); thrifttag != "" {
-						ts := strings.Split(thrifttag, ",")
-						if ts[0] != "" {
-							name = ts[0]
-						}
-					}
-					if required := stag.Get("required"); required != "" {
-						res.schema.Required = append(
-							res.schema.Required,
-							name,
-						)
-					}
-					if desc := stag.Get("description"); desc != "" {
-						propertie.Description = desc
-					}
-
-					res.schema.Properties[name] = propertie
-				}
-				if ignore := stag.Get("ignore"); ignore != "" {
-					continue
-				}
-			} else {
-				for _, pkg := range res.astPkgs {
-					for _, fl := range pkg.Files {
-						pathInfo, err := generatePathInfo(fl)
-						if err != nil {
-							ColorLog("[ERRO] failed generating path info: %v", err)
-							os.Exit(1)
-						}
-
-						for _, obj := range fl.Scope.Objects {
-							if obj.Name == fmt.Sprint(field.Type) {
-								res.object = obj
-								res.packageName = pkg.Name
-								res.pathInfo = pathInfo
-								res.parseObject()
-							}
-						}
-					}
-				}
-			}
-		}
-	}
 }
 
 // deepCopy copies all fields in an interface recursively.
@@ -1191,4 +1101,49 @@ func operationIDFormat(value string) string {
 	value = strings.Replace(value, "/", ".", -1)
 
 	return value
+}
+
+func fieldNameFromTag(tag string) (string, error) {
+	var name string
+
+	structTag := reflect.StructTag(strings.Trim(tag, "`"))
+
+	// skip ignored field
+	if ignore := structTag.Get("ignore"); ignore != "" {
+		return "", errors.New("field is ignored")
+	}
+
+	// Set json tag name as field name
+	jsonTag := structTag.Get("json")
+	jsonTagValues := strings.Split(jsonTag, ",")
+
+	// skip property with `-` tag
+	if len(jsonTagValues) > 0 && jsonTagValues[0] == "-" {
+		return "", errors.New("no value or ignored field")
+	}
+
+	if len(jsonTagValues) > 0 && jsonTagValues[0] != "omitempty" {
+		name = jsonTagValues[0]
+	}
+
+	// Overwrite with thrift tag name if any
+	thriftTag := structTag.Get("thrift")
+	thriftTagValues := strings.Split(thriftTag, ",")
+	if len(thriftTagValues) > 0 && thriftTagValues[0] != "" {
+		name = thriftTagValues[0]
+	}
+
+	return name, nil
+}
+
+func setFieldPropertieMetadata(propertie *swagger.Propertie, tag, name string) {
+	structTag := reflect.StructTag(strings.Trim(tag, "`"))
+
+	if required := structTag.Get("required"); required != "" {
+		propertie.Required = append(propertie.Required, name)
+	}
+
+	if desc := structTag.Get("description"); desc != "" {
+		propertie.Description = desc
+	}
 }

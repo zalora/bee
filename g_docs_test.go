@@ -368,6 +368,7 @@ func TestParseObject(t *testing.T) {
 			},
 			expectedSchema: &swagger.Schema{
 				Title: "structObject",
+				Type:  "object",
 				Properties: map[string]swagger.Propertie{
 					"fieldName": {
 						Type: "string",
@@ -399,13 +400,9 @@ func TestParseObject(t *testing.T) {
 				realTypes: &[]string{},
 			},
 			expectedSchema: &swagger.Schema{
-				Title: "anyType",
-				Properties: map[string]swagger.Propertie{
-					"anyType": {
-						Type:   "integer",
-						Format: "int64",
-					},
-				},
+				Title:  "anyType",
+				Type:   "integer",
+				Format: "int64",
 			},
 			expectedRealTypes: &[]string{},
 		},
