@@ -569,8 +569,52 @@ func TestOperationIDFormat(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		sub := operationIDFormat(tt.value)
+		t.Run(tt.description, func(t *testing.T) {
+			sub := operationIDFormat(tt.value)
 
-		assert.Equal(t, tt.expectedValue, sub)
+			assert.Equal(t, tt.expectedValue, sub)
+		})
+	}
+}
+
+func TestFieldNameFromTag(t *testing.T) {
+	tests := []struct {
+		description  string
+		tag          string
+		expectedName string
+	}{
+		{
+			description:  "json tag",
+			tag:          "json:\"json_field_name\"",
+			expectedName: "json_field_name",
+		},
+		{
+			description:  "thrift tag",
+			tag:          "thrift:\"thrift_field_name,1\"",
+			expectedName: "thrift_field_name",
+		},
+		{
+			description:  "ignored field with 'ignored' tag",
+			tag:          "ignore:\"field_name\"",
+			expectedName: "",
+		},
+		{
+			description:  "ignored field with '-' json tag",
+			tag:          "json:\"-\"",
+			expectedName: "",
+		},
+		{
+			description:  "json and thrift name tags",
+			tag:          "json:\"json_field_name\" thrift:\"thrift_field_name,1\"",
+			expectedName: "thrift_field_name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			sub := fieldNameFromTag(tt.tag)
+
+			assert.Equal(t, tt.expectedName, sub)
+		})
 	}
 }
