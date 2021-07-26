@@ -618,3 +618,47 @@ func TestFieldNameFromTag(t *testing.T) {
 		})
 	}
 }
+
+func TestSetFieldPropertieMetada(t *testing.T) {
+	tests := []struct {
+		description       string
+		propertie         *swagger.Propertie
+		tag               string
+		name              string
+		expectedPropertie *swagger.Propertie
+	}{
+		{
+			description: "required tag",
+			propertie:   &swagger.Propertie{},
+			tag:         "required:\"field_name\"",
+			name:        "field_name",
+			expectedPropertie: &swagger.Propertie{
+				Required: []string{"field_name"},
+			},
+		},
+		{
+			description: "required tag",
+			propertie:   &swagger.Propertie{},
+			tag:         "description:\"this is a field description\"",
+			name:        "field_name",
+			expectedPropertie: &swagger.Propertie{
+				Description: "this is a field description",
+			},
+		},
+		{
+			description:       "no processed tag",
+			propertie:         &swagger.Propertie{},
+			tag:               "json:\"field_name\"",
+			name:              "field_name",
+			expectedPropertie: &swagger.Propertie{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			setFieldPropertieMetadata(tt.propertie, tt.tag, tt.name)
+
+			assert.Equal(t, tt.expectedPropertie, tt.propertie)
+		})
+	}
+}
