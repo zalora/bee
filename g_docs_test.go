@@ -108,7 +108,7 @@ func TestConstructObjectPropertie(t *testing.T) {
 			description: "map type",
 			field: &ast.MapType{
 				Key: &ast.Ident{
-					Name: "string", // TODO: map with non-string key
+					Name: "string",
 				},
 				Value: &testdata.StructRepresentation,
 			}, // map[string]structName{}

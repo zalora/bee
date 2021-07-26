@@ -259,9 +259,10 @@ func analisysNSInclude(baseURL string, ce *ast.CallExpr) string {
 					tag = strings.Trim(baseURL, "/")
 				}
 
-				// replicate item to make referenced value untouched
+				// replicate item to make referenced value untouched,
 				// because if the endpoint shares the same controller with another
-				// endpoints the referenced value might be used again.
+				// endpoints the referenced value will be used again and the new
+				// endpoint will need the original value rather than the edited value.
 				replicatedItem, err := replicateSwaggerItem(item)
 				if err != nil {
 					ColorLog("[ERRO] failed replicating swagger item, got: %s\n", err)
@@ -788,7 +789,6 @@ func grepJSONTag(tag string) string {
 }
 
 // append models
-// TODO: remove cmpath
 func appendModels(cmpath, pkgpath, controllerName string, realTypes []string) {
 	var p string
 	if cmpath != "" {
@@ -825,7 +825,7 @@ func urlReplace(src string) string {
 
 // constructObjectPropertie constructs a swagger.Propertie out of
 // an ast.Expr. This function recursively traverse all expression
-// until it reaches an object or pre-defined basic golang type.
+// until it reaches one of an object, selector, or pre-defined basic golang type.
 func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]string, pathInfo map[string]string) (propertie swagger.Propertie) {
 
 	// basic Go type can be directly translated into swagger type
@@ -894,11 +894,7 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 				continue
 			}
 
-			name, err := fieldNameFromTag(v.Tag.Value)
-			if err != nil {
-				continue
-			}
-
+			name := fieldNameFromTag(v.Tag.Value)
 			if name == "" {
 				name = v.Names[0].Name
 			}
@@ -931,7 +927,7 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 
 // objectWithPackageName returns an object with package name in format
 // packageName.Object. There are two types of object that can be identified
-// by ast, the internal and imported objects.
+// by ast, the same-package and imported objects.
 // The imported object comes with `&{PackageName Object}` format and
 // the internal object comes with `object` format. In the latter
 // case we need to assign the current package name to the object.
@@ -941,7 +937,7 @@ func objectWithPackageName(object, packageName string) string {
 		return object
 	}
 
-	if len(strings.Split(object, " ")) == 1 {
+	if !strings.Contains(object, "&") {
 		return packageName + "." + object
 	}
 
@@ -1102,14 +1098,18 @@ func operationIDFormat(value string) string {
 	return value
 }
 
-func fieldNameFromTag(tag string) (string, error) {
+// fieldNameFromTag process a tag attached to a struct field to get
+// the respective name according to its encoding (thrift/json).
+// if the tag is explicityly wants to be ignored then
+// the name returned will be an empty string.
+func fieldNameFromTag(tag string) string {
 	var name string
 
 	structTag := reflect.StructTag(strings.Trim(tag, "`"))
 
 	// skip ignored field
 	if ignore := structTag.Get("ignore"); ignore != "" {
-		return "", errors.New("field is ignored")
+		return ""
 	}
 
 	// Set json tag name as field name
@@ -1118,7 +1118,7 @@ func fieldNameFromTag(tag string) (string, error) {
 
 	// skip property with `-` tag
 	if len(jsonTagValues) > 0 && jsonTagValues[0] == "-" {
-		return "", errors.New("no value or ignored field")
+		return ""
 	}
 
 	if len(jsonTagValues) > 0 && jsonTagValues[0] != "omitempty" {
@@ -1132,7 +1132,7 @@ func fieldNameFromTag(tag string) (string, error) {
 		name = thriftTagValues[0]
 	}
 
-	return name, nil
+	return name
 }
 
 func setFieldPropertieMetadata(propertie *swagger.Propertie, tag, name string) {
