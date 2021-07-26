@@ -8,66 +8,8 @@ import (
 
 	"github.com/astaxie/beego/swagger"
 	"github.com/stretchr/testify/assert"
+	"github.com/zalora/bee/testdata"
 )
-
-var structAstRepresentation = ast.StructType{
-	Fields: &ast.FieldList{
-		List: []*ast.Field{
-			{
-				Names: []*ast.Ident{
-					{
-						Name: "fieldName",
-						Obj: &ast.Object{
-							Kind: ast.Var,
-							Name: "fieldName",
-							Decl: ast.Field{
-								Names: []*ast.Ident{
-									{
-										Name: "fieldName",
-									},
-								},
-								Type: &ast.Ident{
-									Name: "string",
-								},
-							},
-						},
-					},
-				},
-				Type: &ast.Ident{
-					Name: "string",
-				},
-				Tag: &ast.BasicLit{
-					Kind:  token.STRING,
-					Value: "field_name,omitempty",
-				},
-			},
-			{
-				Names: []*ast.Ident{
-					{
-						Name: "fieldName2",
-						Obj: &ast.Object{
-							Kind: ast.Var,
-							Name: "fieldName2",
-							Decl: ast.Field{
-								Names: []*ast.Ident{
-									{
-										Name: "fieldName2",
-									},
-								},
-								Type: &ast.Ident{
-									Name: "int64",
-								},
-							},
-						},
-					},
-				},
-				Type: &ast.Ident{
-					Name: "int64",
-				},
-			}, // field without a tag
-		},
-	},
-} // type structName struct { fieldName string; fieldName2 int64; }
 
 func TestConstructObjectPropertie(t *testing.T) {
 	tests := []struct {
@@ -128,16 +70,20 @@ func TestConstructObjectPropertie(t *testing.T) {
 		},
 		{
 			description: "struct type",
-			field:       &structAstRepresentation,
+			field:       &testdata.StructRepresentation,
 			realTypes:   []string{},
 			pathInfo:    map[string]string{},
 			expected: swagger.Propertie{
 				Type: "object",
 				Properties: map[string]swagger.Propertie{
-					"fieldName": {
+					"field_name": {
 						Type: "string",
 					},
 					"fieldName2": {
+						Type:   "integer",
+						Format: "int64",
+					},
+					"expandedField1": {
 						Type:   "integer",
 						Format: "int64",
 					},
@@ -151,7 +97,7 @@ func TestConstructObjectPropertie(t *testing.T) {
 				Key: &ast.Ident{
 					Name: "int64",
 				},
-				Value: &structAstRepresentation,
+				Value: &testdata.StructRepresentation,
 			}, // map[int64]structName{}
 			realTypes:         []string{},
 			pathInfo:          map[string]string{},
@@ -164,7 +110,7 @@ func TestConstructObjectPropertie(t *testing.T) {
 				Key: &ast.Ident{
 					Name: "string", // TODO: map with non-string key
 				},
-				Value: &structAstRepresentation,
+				Value: &testdata.StructRepresentation,
 			}, // map[string]structName{}
 			realTypes: []string{},
 			pathInfo:  map[string]string{},
@@ -173,10 +119,14 @@ func TestConstructObjectPropertie(t *testing.T) {
 				AdditionalProperties: &swagger.Propertie{
 					Type: "object",
 					Properties: map[string]swagger.Propertie{
-						"fieldName": {
+						"field_name": {
 							Type: "string",
 						},
 						"fieldName2": {
+							Type:   "integer",
+							Format: "int64",
+						},
+						"expandedField1": {
 							Type:   "integer",
 							Format: "int64",
 						},
@@ -360,7 +310,7 @@ func TestParseObject(t *testing.T) {
 						Name: &ast.Ident{
 							Name: "structObject",
 						},
-						Type: &structAstRepresentation,
+						Type: &testdata.StructRepresentation,
 					},
 				},
 				schema:    &swagger.Schema{},
@@ -370,10 +320,14 @@ func TestParseObject(t *testing.T) {
 				Title: "structObject",
 				Type:  "object",
 				Properties: map[string]swagger.Propertie{
-					"fieldName": {
+					"field_name": {
 						Type: "string",
 					},
 					"fieldName2": {
+						Type:   "integer",
+						Format: "int64",
+					},
+					"expandedField1": {
 						Type:   "integer",
 						Format: "int64",
 					},

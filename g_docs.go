@@ -879,8 +879,7 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 				v.Type, packageName, realTypes, pathInfo,
 			)
 
-			// if field is unnamed, expand field.
-			// TODO: test with real unnamed field
+			// if field is unnamed, try expanding the field.
 			if len(v.Names) == 0 {
 				for name, p := range fieldPropertie.Properties {
 					object[name] = p
