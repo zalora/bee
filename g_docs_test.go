@@ -206,7 +206,7 @@ func TestGeneratePathInfo(t *testing.T) {
 		description string
 		src         string
 		expected    map[string]string
-		isError     assert.ErrorAssertionFunc
+		assertErr   assert.ErrorAssertionFunc
 	}{
 		{
 			description: "no imported package",
@@ -217,8 +217,8 @@ func TestGeneratePathInfo(t *testing.T) {
 				a := 1 + 1
 			}
 			`),
-			expected: map[string]string{},
-			isError:  assert.NoError,
+			expected:  map[string]string{},
+			assertErr: assert.NoError,
 		},
 		{
 			description: "non internal imported packages",
@@ -234,8 +234,8 @@ func TestGeneratePathInfo(t *testing.T) {
 				a := 1 + 1
 			}
 			`),
-			expected: map[string]string{},
-			isError:  assert.NoError,
+			expected:  map[string]string{},
+			assertErr: assert.NoError,
 		},
 		{
 			description: "internal imported packages",
@@ -255,7 +255,7 @@ func TestGeneratePathInfo(t *testing.T) {
 				"packageA":  "/packageA",
 				"packageBA": "/packageB/packageBA",
 			},
-			isError: assert.NoError,
+			assertErr: assert.NoError,
 		},
 		{
 			description: "with named internal package",
@@ -275,7 +275,7 @@ func TestGeneratePathInfo(t *testing.T) {
 				"packageA": "/packageA",
 				"packageC": "/packageB/packageBA",
 			},
-			isError: assert.NoError,
+			assertErr: assert.NoError,
 		},
 	}
 
@@ -288,7 +288,7 @@ func TestGeneratePathInfo(t *testing.T) {
 
 			sub, err := generatePathInfo(f)
 			assert.Equal(t, tt.expected, sub)
-			tt.isError(t, err)
+			tt.assertErr(t, err)
 		})
 	}
 }
@@ -396,13 +396,13 @@ func TestDeepCopy(t *testing.T) {
 		description    string
 		value          interface{}
 		expectedResult interface{}
-		isError        assert.ErrorAssertionFunc
+		assertErr      assert.ErrorAssertionFunc
 	}{
 		{
 			description:    "nil value",
 			value:          nil,
 			expectedResult: nil,
-			isError:        assert.NoError,
+			assertErr:      assert.NoError,
 		},
 		{
 			description: "struct",
@@ -420,7 +420,7 @@ func TestDeepCopy(t *testing.T) {
 					OperationID: "#1",
 				},
 			},
-			isError: assert.NoError,
+			assertErr: assert.NoError,
 		},
 		{
 			description: "pointer struct",
@@ -438,7 +438,7 @@ func TestDeepCopy(t *testing.T) {
 					OperationID: "#2",
 				},
 			},
-			isError: assert.NoError,
+			assertErr: assert.NoError,
 		},
 	}
 
@@ -448,7 +448,7 @@ func TestDeepCopy(t *testing.T) {
 
 			assert.Equal(t, tt.expectedResult, sub)
 			assert.NotSame(t, tt.expectedResult, sub)
-			tt.isError(t, err)
+			tt.assertErr(t, err)
 		})
 	}
 }
@@ -458,13 +458,13 @@ func TestReplicateSwaggerItem(t *testing.T) {
 		description  string
 		item         *swagger.Item
 		expectedItem *swagger.Item
-		isError      assert.ErrorAssertionFunc
+		assertErr    assert.ErrorAssertionFunc
 	}{
 		{
 			description:  "empty swagger item",
 			item:         &swagger.Item{},
 			expectedItem: &swagger.Item{},
-			isError:      assert.NoError,
+			assertErr:    assert.NoError,
 		},
 		{
 			description: "non-empty swagger item",
@@ -482,7 +482,7 @@ func TestReplicateSwaggerItem(t *testing.T) {
 					OperationID: "OperationID#1",
 				},
 			},
-			isError: assert.NoError,
+			assertErr: assert.NoError,
 		},
 	}
 
@@ -492,7 +492,7 @@ func TestReplicateSwaggerItem(t *testing.T) {
 
 			assert.Equal(t, tt.expectedItem, sub)
 			assert.NotSame(t, tt.expectedItem, sub)
-			tt.isError(t, err)
+			tt.assertErr(t, err)
 		})
 	}
 }
