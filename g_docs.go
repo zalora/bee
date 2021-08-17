@@ -42,6 +42,7 @@ const (
 	axml   = "application/xml"
 	aplain = "text/plain"
 	ahtml  = "text/html"
+	aform  = "multipart/form-data"
 
 	content_type_thrift_binary_webcontent_v1 = "application/vnd.zalora.webcontent.v1+thrift.binary"
 	content_type_thrift_json_webcontent_v1   = "application/vnd.zalora.webcontent.v1+thrift.json"
@@ -592,6 +593,9 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 					case "thrift_webcontent_json":
 						opts.Consumes = append(opts.Consumes, content_type_thrift_json_webcontent_v1)
 						opts.Produces = append(opts.Produces, content_type_thrift_json_webcontent_v1)
+					case "form":
+						opts.Consumes = append(opts.Consumes, aform)
+						opts.Produces = append(opts.Produces, aform)
 					}
 				}
 			}
