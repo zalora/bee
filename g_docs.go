@@ -518,6 +518,14 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						paraType = typeFormat[0]
 						paraFormat = typeFormat[1]
 					} else if typ == "enum" {
+						// enum type should always have sample values separated
+						// by comma (,) to be shown in swagger docs as a list
+						// of values.
+						if len(p) < 5 {
+							ColorLog("[ERRO] enum should have sample values: %v\n", p)
+							os.Exit(1)
+						}
+
 						paraType = "string"
 						para.Enum = strings.Split(p[4], ",")
 						if len(p) > 6 {
