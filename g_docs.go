@@ -509,16 +509,32 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						typ = typ[2:]
 						isArray = true
 					}
+
 					if typ == "string" || typ == "number" || typ == "integer" || typ == "boolean" ||
-						typ == "array" || typ == "file" || typ == "enum" {
+						typ == "array" || typ == "file" {
 						paraType = typ
 					} else if sType, ok := basicTypes[typ]; ok {
 						typeFormat := strings.Split(sType, ":")
 						paraType = typeFormat[0]
 						paraFormat = typeFormat[1]
+					} else if typ == "enum" {
+						// enum type should always have sample values separated
+						// by comma (,) to be shown in swagger docs as a list
+						// of values.
+						if len(p) < 5 {
+							ColorLog("[ERRO] enum should have sample values: %v\n", p)
+							os.Exit(1)
+						}
+
+						paraType = "string"
+						para.Enum = strings.Split(p[4], ",")
+						if len(p) > 6 {
+							para.Default = p[5]
+						}
 					} else {
 						ColorLog("[WARN][%s.%s] Unknow param type: %s\n", controllerName, funcName, typ)
 					}
+
 					if isArray {
 						para.Type = "array"
 						para.Items = &swagger.ParameterItems{
@@ -530,18 +546,12 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						para.Format = paraFormat
 					}
 				}
-				if len(p) > 4 {
-					para.Required, _ = strconv.ParseBool(p[3])
-					if "enum" == strings.ToLower(typ) {
-						para.Enum = strings.Split(p[4], ",")
-						para.Default = p[5]
-					}
-				} else {
-					if "enum" == strings.ToLower(typ) {
-						para.Enum = strings.Split(p[3], ",")
-						para.Default = p[4]
-					}
+
+				paraRequired, err := strconv.ParseBool(p[3])
+				if err != nil {
+					ColorLog("[WARN] invalid value on 'required' field (%s)\n", p)
 				}
+				para.Required = paraRequired
 				para.Description = strings.Trim(p[len(p)-1], `" `)
 				opts.Parameters = append(opts.Parameters, para)
 			} else if strings.HasPrefix(t, "@Failure") {
