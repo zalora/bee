@@ -17,7 +17,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/howeyc/fsnotify"
 	"os"
 	"os/exec"
 	"regexp"
@@ -25,6 +24,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/howeyc/fsnotify"
+)
+
+const (
+	routersPackage = "routers"
 )
 
 var (
@@ -218,6 +223,8 @@ func Start(appname string) {
 	if strings.Index(appname, "./") == -1 {
 		appname = "./" + appname
 	}
+
+	formatSourceCode(routersPackage)
 
 	cmd = exec.Command(appname)
 	cmd.Stdout = os.Stdout
