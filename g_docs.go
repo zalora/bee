@@ -437,7 +437,6 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						ColorLog("[ERRO][%s.%s] Schema must follow {object} or {array}\n", controllerName, funcName)
 						os.Exit(-1)
 					}
-					rs.Description = schemaName
 					if strings.HasPrefix(schemaName, "[]") {
 						schemaName = schemaName[2:]
 						isArray = true
@@ -464,7 +463,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 					} else {
 						rs.Schema = &schema
 					}
-					rs.Description += strings.TrimSpace(" " + ss[pos:])
+					rs.Description = strings.TrimSpace(schemaName + ss[pos:])
 				} else {
 					rs.Description = strings.TrimSpace(ss)
 				}
