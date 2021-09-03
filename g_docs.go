@@ -795,8 +795,14 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 	}
 }
 
+// constructObjectPropertie constructs a swagger.Propertie out of
+// an ast.Expr. This function recursively traverse all expression
+// until it reaches one of object or pre-defined basic golang type / primitive.
 func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Propertie {
 	var propertie swagger.Propertie
+
+	// basic Go types (primitives) can be directly translated into
+	// swagger-supported type with pre-defined mapping.
 	if basicType, ok := basicTypes[fmt.Sprint(field)]; ok {
 		propInfo := strings.Split(basicType, ":")
 
@@ -822,10 +828,14 @@ func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Prope
 		propertie.Ref = "#/definitions/" + object
 
 		// append object to realTypes to be traversed further by appendModels
-		// function
+		// function.
 		*realTypes = append(*realTypes, object)
 		return propertie
 	case *ast.ArrayType:
+		// Array Type is an array which can be directly stated to swagger doc
+		// type. But, the object of the array must be traversed further to know
+		// what the actual type is.
+		// Array Type example: []*int
 		object := constructObjectPropertie(
 			f.Elt, realTypes,
 		)
@@ -833,6 +843,11 @@ func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Prope
 		propertie.Items = &object
 		return propertie
 	case *ast.MapType:
+		// Map Type is a map/dictionary of other object. Map Type can be stated
+		// in swagger doc as type `object` and the value of the map can be
+		// positioned in the `AdditionalProperties` field of swagger.Propertie.
+		// Swagger Doc only support string as the map key.
+		// Map Type example: map[string]Product
 		object := constructObjectPropertie(
 			f.Value, realTypes,
 		)
