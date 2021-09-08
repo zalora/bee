@@ -694,7 +694,9 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 		ColorLog("[ERRO] the model %s parser.ParseDir error\n", str)
 		os.Exit(1)
 	}
+
 	m.Type = "object"
+	var packageName string
 	for _, pkg := range astPkgs {
 		for _, fl := range pkg.Files {
 			for k, d := range fl.Scope.Objects {
@@ -702,7 +704,16 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 					if k != objectname {
 						continue
 					}
-					parseObject(d, k, &m, &realTypes, astPkgs)
+
+					packageName = pkg.Name
+					res := &objectResource{
+						object:      d,
+						schema:      &m,
+						realTypes:   &realTypes,
+						astPkgs:     astPkgs,
+						packageName: packageName,
+					}
+					res.parse()
 				}
 			}
 		}
@@ -715,14 +726,24 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 	if len(rootapi.Definitions) == 0 {
 		rootapi.Definitions = make(map[string]swagger.Schema)
 	}
+	objectname = objectWithPackageName(objectname, packageName)
 	rootapi.Definitions[objectname] = m
 	return
 }
 
-func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string, astPkgs map[string]*ast.Package) {
-	ts, ok := d.Decl.(*ast.TypeSpec)
+type objectResource struct {
+	object      *ast.Object
+	schema      *swagger.Schema
+	realTypes   *[]string
+	astPkgs     map[string]*ast.Package
+	packageName string
+	pathInfo    map[string]string
+}
+
+func (res *objectResource) parse() {
+	ts, ok := res.object.Decl.(*ast.TypeSpec)
 	if !ok {
-		ColorLog("Unknown type without TypeSec: %v\n", d)
+		ColorLog("Unknown type without TypeSec: %v\n", res.object)
 		os.Exit(1)
 	}
 	// TODO support other types, such as `ArrayType`, `MapType`, `InterfaceType` etc...
@@ -730,11 +751,11 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 	if !ok {
 		return
 	}
-	m.Title = k
+	res.schema.Title = res.object.Name
 	if st.Fields.List != nil {
-		m.Properties = make(map[string]swagger.Propertie)
+		res.schema.Properties = make(map[string]swagger.Propertie)
 		for _, field := range st.Fields.List {
-			mp := constructObjectPropertie(field.Type, realTypes)
+			mp := constructObjectPropertie(field.Type, res.packageName, res.realTypes)
 			if field.Names != nil {
 
 				// set property name as field name
@@ -742,7 +763,7 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 
 				// if no tag skip tag processing
 				if field.Tag == nil {
-					m.Properties[name] = mp
+					res.schema.Properties[name] = mp
 					continue
 				}
 
@@ -769,23 +790,30 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 						}
 					}
 					if required := stag.Get("required"); required != "" {
-						m.Required = append(m.Required, name)
+						res.schema.Required = append(res.schema.Required, name)
 					}
 					if desc := stag.Get("description"); desc != "" {
 						mp.Description = desc
 					}
 
-					m.Properties[name] = mp
+					res.schema.Properties[name] = mp
 				}
 				if ignore := stag.Get("ignore"); ignore != "" {
 					continue
 				}
 			} else {
-				for _, pkg := range astPkgs {
+				for _, pkg := range res.astPkgs {
 					for _, fl := range pkg.Files {
-						for nameOfObj, obj := range fl.Scope.Objects {
+						for _, obj := range fl.Scope.Objects {
 							if obj.Name == fmt.Sprint(field.Type) {
-								parseObject(obj, nameOfObj, m, realTypes, astPkgs)
+								res := &objectResource{
+									object:      obj,
+									schema:      res.schema,
+									realTypes:   res.realTypes,
+									astPkgs:     res.astPkgs,
+									packageName: pkg.Name,
+								}
+								res.parse()
 							}
 						}
 					}
@@ -795,10 +823,27 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 	}
 }
 
+func objectWithPackageName(object, packageName string) string {
+	if len(strings.Split(object, " ")) > 1 {
+		object = strings.ReplaceAll(object, " ", ".")
+		object = strings.ReplaceAll(object, "&", "")
+		object = strings.ReplaceAll(object, "{", "")
+		object = strings.ReplaceAll(object, "}", "")
+
+		return object
+	}
+
+	if packageName == "" {
+		return object
+	}
+
+	return packageName + "." + object
+}
+
 // constructObjectPropertie constructs a swagger.Propertie out of
 // an ast.Expr. This function recursively traverse all expression
 // until it reaches one of object or pre-defined basic golang type / primitive.
-func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Propertie {
+func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]string) swagger.Propertie {
 	var propertie swagger.Propertie
 
 	// basic Go types (primitives) can be directly translated into
@@ -825,7 +870,8 @@ func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Prope
 		// via `appendModels` function.
 		// Star Expression example: *Wishlist
 		object := fmt.Sprint(f.X)
-		propertie.Ref = "#/definitions/" + object
+		pkgObject := objectWithPackageName(object, packageName)
+		propertie.Ref = "#/definitions/" + pkgObject
 
 		// append object to realTypes to be traversed further by appendModels
 		// function.
@@ -836,9 +882,7 @@ func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Prope
 		// type. But, the object of the array must be traversed further to know
 		// what the actual type is.
 		// Array Type example: []*int
-		object := constructObjectPropertie(
-			f.Elt, realTypes,
-		)
+		object := constructObjectPropertie(f.Elt, packageName, realTypes)
 		propertie.Type = "array"
 		propertie.Items = &object
 		return propertie
@@ -848,9 +892,7 @@ func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Prope
 		// positioned in the `AdditionalProperties` field of swagger.Propertie.
 		// Swagger Doc only support string as the map key.
 		// Map Type example: map[string]Product
-		object := constructObjectPropertie(
-			f.Value, realTypes,
-		)
+		object := constructObjectPropertie(f.Value, packageName, realTypes)
 		propertie.Type = "object"
 		propertie.AdditionalProperties = &object
 		return propertie
@@ -884,7 +926,8 @@ func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Prope
 	}
 
 	object := fmt.Sprint(field)
-	propertie.Ref = "#/definitions/" + object
+	pkgObject := objectWithPackageName(object, packageName)
+	propertie.Ref = "#/definitions/" + pkgObject
 	*realTypes = append(*realTypes, object)
 
 	return propertie
