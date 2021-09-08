@@ -823,6 +823,12 @@ func (res *objectResource) parse() {
 	}
 }
 
+// objectWithPackageName returns an object with package name in format
+// `packageName.Object`. There are two types of object that can be identified
+// by ast, the same-package and imported objects.
+// The imported object comes with `&{PackageName Object}` format and
+// the internal object comes with `object` format. In the latter
+// case we need to assign the current packageName to the object.
 func objectWithPackageName(object, packageName string) string {
 	if len(strings.Split(object, " ")) > 1 {
 		object = strings.ReplaceAll(object, " ", ".")
