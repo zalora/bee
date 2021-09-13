@@ -756,52 +756,7 @@ func (res *objectResource) parse() {
 		res.schema.Properties = make(map[string]swagger.Propertie)
 		for _, field := range st.Fields.List {
 			mp := constructObjectPropertie(field.Type, res.packageName, res.realTypes)
-			if field.Names != nil {
-
-				// set property name as field name
-				var name = field.Names[0].Name
-
-				// if no tag skip tag processing
-				if field.Tag == nil {
-					res.schema.Properties[name] = mp
-					continue
-				}
-
-				var tagValues []string
-				stag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
-				tag := stag.Get("json")
-
-				if tag != "" {
-					tagValues = strings.Split(tag, ",")
-				}
-
-				// dont add property if json tag first value is "-"
-				if len(tagValues) == 0 || tagValues[0] != "-" {
-
-					// set property name to the left most json tag value only if is not omitempty
-					if len(tagValues) > 0 && tagValues[0] != "omitempty" {
-						name = tagValues[0]
-					}
-
-					if thrifttag := stag.Get("thrift"); thrifttag != "" {
-						ts := strings.Split(thrifttag, ",")
-						if ts[0] != "" {
-							name = ts[0]
-						}
-					}
-					if required := stag.Get("required"); required != "" {
-						res.schema.Required = append(res.schema.Required, name)
-					}
-					if desc := stag.Get("description"); desc != "" {
-						mp.Description = desc
-					}
-
-					res.schema.Properties[name] = mp
-				}
-				if ignore := stag.Get("ignore"); ignore != "" {
-					continue
-				}
-			} else {
+			if field.Names == nil {
 				for _, pkg := range res.astPkgs {
 					for _, fl := range pkg.Files {
 						for _, obj := range fl.Scope.Objects {
@@ -818,7 +773,22 @@ func (res *objectResource) parse() {
 						}
 					}
 				}
+				continue
 			}
+
+			// if no tag found skip tag processing
+			if field.Tag == nil {
+				name := field.Names[0].Name
+				res.schema.Properties[name] = mp
+				continue
+			}
+
+			name := fieldNameFromTag(field.Tag.Value)
+			if name == "" {
+				name = field.Names[0].Name
+			}
+
+			setSchemaProperties(res.schema, mp, field.Tag.Value, name)
 		}
 	}
 }
@@ -1078,4 +1048,18 @@ func fieldNameFromTag(tag string) string {
 	}
 
 	return name
+}
+
+func setSchemaProperties(schema *swagger.Schema, fieldPropertie swagger.Propertie, tag, name string) {
+	structTag := reflect.StructTag(strings.Trim(tag, "`"))
+
+	if required := structTag.Get("required"); required != "" {
+		schema.Required = append(schema.Required, name)
+	}
+
+	if desc := structTag.Get("description"); desc != "" {
+		fieldPropertie.Description = desc
+	}
+
+	schema.Properties[name] = fieldPropertie
 }
