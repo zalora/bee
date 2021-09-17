@@ -734,37 +734,7 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 	if st.Fields.List != nil {
 		m.Properties = make(map[string]swagger.Propertie)
 		for _, field := range st.Fields.List {
-			isSlice, realType, sType := typeAnalyser(field)
-			*realTypes = append(*realTypes, realType)
-			mp := swagger.Propertie{}
-			if isSlice {
-				mp.Type = "array"
-				if isBasicType(realType) {
-					typeFormat := strings.Split(sType, ":")
-					mp.Items = &swagger.Propertie{
-						Type:   typeFormat[0],
-						Format: typeFormat[1],
-					}
-				} else {
-					mp.Items = &swagger.Propertie{
-						Ref: "#/definitions/" + realType,
-					}
-				}
-			} else {
-				if sType == "object" {
-					mp.Ref = "#/definitions/" + realType
-				} else if isBasicType(realType) {
-					typeFormat := strings.Split(sType, ":")
-					mp.Type = typeFormat[0]
-					mp.Format = typeFormat[1]
-				} else if realType == "map" {
-					typeFormat := strings.Split(sType, ":")
-					mp.AdditionalProperties = &swagger.Propertie{
-						Type:   typeFormat[0],
-						Format: typeFormat[1],
-					}
-				}
-			}
+			mp := constructObjectPropertie(field.Type, realTypes)
 			if field.Names != nil {
 
 				// set property name as field name
@@ -825,33 +795,72 @@ func parseObject(d *ast.Object, k string, m *swagger.Schema, realTypes *[]string
 	}
 }
 
-func typeAnalyser(f *ast.Field) (isSlice bool, realType, swaggerType string) {
-	if arr, ok := f.Type.(*ast.ArrayType); ok {
-		if isBasicType(fmt.Sprint(arr.Elt)) {
-			return false, fmt.Sprintf("[]%v", arr.Elt), basicTypes[fmt.Sprint(arr.Elt)]
+// constructObjectPropertie constructs a swagger.Propertie out of
+// an ast.Expr. This function recursively traverse all expression
+// until it reaches one of object or pre-defined basic golang type / primitive.
+func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Propertie {
+	var propertie swagger.Propertie
+
+	// basic Go types (primitives) can be directly translated into
+	// swagger-supported type with pre-defined mapping.
+	if basicType, ok := basicTypes[fmt.Sprint(field)]; ok {
+		propInfo := strings.Split(basicType, ":")
+
+		if len(propInfo) != 2 {
+			ColorLog("[WARN] basicTypes const is not properly configured for %v", field)
+			return propertie
 		}
-		if mp, ok := arr.Elt.(*ast.MapType); ok {
-			return false, fmt.Sprintf("map[%v][%v]", mp.Key, mp.Value), "object"
-		}
-		if star, ok := arr.Elt.(*ast.StarExpr); ok {
-			return true, fmt.Sprint(star.X), "object"
-		}
-		return true, fmt.Sprint(arr.Elt), "object"
+
+		propertie.Type = propInfo[0]
+		propertie.Format = propInfo[1]
+
+		return propertie
 	}
-	switch t := f.Type.(type) {
+
+	switch f := field.(type) {
 	case *ast.StarExpr:
-		return false, fmt.Sprint(t.X), "object"
+		// Star Expression is a pointer object. The star expression can be
+		// defined in swagger doc as a reference, which its definition will
+		// later be appended in the definition list and traversed further
+		// via `appendModels` function.
+		// Star Expression example: *Wishlist
+		object := fmt.Sprint(f.X)
+		propertie.Ref = "#/definitions/" + object
+
+		// append object to realTypes to be traversed further by appendModels
+		// function.
+		*realTypes = append(*realTypes, object)
+		return propertie
+	case *ast.ArrayType:
+		// Array Type is an array which can be directly stated to swagger doc
+		// type. But, the object of the array must be traversed further to know
+		// what the actual type is.
+		// Array Type example: []*int
+		object := constructObjectPropertie(
+			f.Elt, realTypes,
+		)
+		propertie.Type = "array"
+		propertie.Items = &object
+		return propertie
 	case *ast.MapType:
-		val := fmt.Sprintf("%v", t.Value)
-		if isBasicType(val) {
-			return false, "map", basicTypes[val]
-		}
-		return false, val, "object"
+		// Map Type is a map/dictionary of other object. Map Type can be stated
+		// in swagger doc as type `object` and the value of the map can be
+		// positioned in the `AdditionalProperties` field of swagger.Propertie.
+		// Swagger Doc only support string as the map key.
+		// Map Type example: map[string]Product
+		object := constructObjectPropertie(
+			f.Value, realTypes,
+		)
+		propertie.Type = "object"
+		propertie.AdditionalProperties = &object
+		return propertie
 	}
-	if k, ok := basicTypes[fmt.Sprint(f.Type)]; ok {
-		return false, fmt.Sprint(f.Type), k
-	}
-	return false, fmt.Sprint(f.Type), "object"
+
+	object := fmt.Sprint(field)
+	propertie.Ref = "#/definitions/" + object
+	*realTypes = append(*realTypes, object)
+
+	return propertie
 }
 
 func isBasicType(Type string) bool {
@@ -863,14 +872,26 @@ func isBasicType(Type string) bool {
 
 // refer to builtin.go
 var basicTypes = map[string]string{
-	"bool": "boolean:",
-	"uint": "integer:int32", "uint8": "integer:int32", "uint16": "integer:int32", "uint32": "integer:int32", "uint64": "integer:int64",
-	"int": "integer:int64", "int8": "integer:int32", "int16:int32": "integer:int32", "int32": "integer:int32", "int64": "integer:int64",
-	"uintptr": "integer:int64",
-	"float32": "number:float", "float64": "number:double",
-	"string":    "string:",
-	"complex64": "number:float", "complex128": "number:double",
-	"byte": "string:byte", "rune": "string:byte",
+	"bool":        "boolean:",
+	"uint":        "integer:int32",
+	"uint8":       "integer:int32",
+	"uint16":      "integer:int32",
+	"uint32":      "integer:int32",
+	"uint64":      "integer:int64",
+	"int":         "integer:int64",
+	"int8":        "integer:int32",
+	"int16":       "integer:int32",
+	"int16:int32": "integer:int32",
+	"int32":       "integer:int32",
+	"int64":       "integer:int64",
+	"uintptr":     "integer:int64",
+	"float32":     "number:float",
+	"float64":     "number:double",
+	"string":      "string:",
+	"complex64":   "number:float",
+	"complex128":  "number:double",
+	"byte":        "string:byte",
+	"rune":        "string:byte",
 }
 
 // regexp get json tag
