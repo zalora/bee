@@ -854,6 +854,33 @@ func constructObjectPropertie(field ast.Expr, realTypes *[]string) swagger.Prope
 		propertie.Type = "object"
 		propertie.AdditionalProperties = &object
 		return propertie
+	case *ast.Ident:
+		// Type Identity is a type alias of another type. To handle type
+		// identity, the aliased type must be traversed until it reaches a
+		// primitive. Pointers to struct of a slice is also
+		// identified as Type Identity.
+		// Type Identity example:
+		// - type myOwnCatalogID int
+		// - []*Wishlist // *Wishlist is identified as type identity for the
+		// Wishlist struct
+
+		v, ok := f.Obj.Decl.(*ast.TypeSpec)
+		if !ok {
+			ColorLog("[WARN] Unknown type without TypeSpec: %v\n", field)
+			return propertie
+		}
+
+		// Create a definition for the struct type so it can be used by another
+		// type that needs the struct.
+		if _, ok := v.Type.(*ast.StructType); ok {
+			object := fmt.Sprint(field)
+			propertie.Ref = "#/definitions/" + object
+			*realTypes = append(*realTypes, object)
+			return propertie
+		}
+
+		// Construct the aliased type
+		return constructObjectPropertie(v.Type, realTypes)
 	}
 
 	object := fmt.Sprint(field)
