@@ -928,7 +928,7 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 		}
 
 		// Construct the aliased type
-		return constructObjectPropertie(v.Type, realTypes)
+		return constructObjectPropertie(v.Type, packageName, realTypes)
 	}
 
 	object := fmt.Sprint(field)
