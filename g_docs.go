@@ -757,49 +757,56 @@ func (res *objectResource) parse() {
 		ColorLog("Unknown type without TypeSec: %v\n", res.object)
 		os.Exit(1)
 	}
-	// TODO support other types, such as `ArrayType`, `MapType`, `InterfaceType` etc...
-	st, ok := ts.Type.(*ast.StructType)
-	if !ok {
-		return
-	}
-	res.schema.Title = res.object.Name
-	if st.Fields.List != nil {
-		res.schema.Properties = make(map[string]swagger.Propertie)
-		for _, field := range st.Fields.List {
-			mp := constructObjectPropertie(field.Type, res.packageName, res.realTypes, res.pathInfo)
-			if field.Names == nil {
-				for _, pkg := range res.astPkgs {
-					for _, fl := range pkg.Files {
-						for _, obj := range fl.Scope.Objects {
-							if obj.Name == fmt.Sprint(field.Type) {
-								res := &objectResource{
-									object:      obj,
-									schema:      res.schema,
-									realTypes:   res.realTypes,
-									astPkgs:     res.astPkgs,
-									packageName: pkg.Name,
+
+	switch t := ts.Type.(type) {
+	case *ast.Ident:
+		res.schema.Title = res.object.Name
+		propertie := constructObjectPropertie(
+			ts.Type, res.packageName, res.realTypes, res.pathInfo,
+		)
+		res.schema.Properties = propertie.Properties
+		res.schema.Type = propertie.Type
+		res.schema.Format = propertie.Format
+	case *ast.StructType:
+		res.schema.Title = res.object.Name
+		if t.Fields.List != nil {
+			res.schema.Properties = make(map[string]swagger.Propertie)
+			for _, field := range t.Fields.List {
+				mp := constructObjectPropertie(field.Type, res.packageName, res.realTypes, res.pathInfo)
+				if field.Names == nil {
+					for _, pkg := range res.astPkgs {
+						for _, fl := range pkg.Files {
+							for _, obj := range fl.Scope.Objects {
+								if obj.Name == fmt.Sprint(field.Type) {
+									res := &objectResource{
+										object:      obj,
+										schema:      res.schema,
+										realTypes:   res.realTypes,
+										astPkgs:     res.astPkgs,
+										packageName: pkg.Name,
+									}
+									res.parse()
 								}
-								res.parse()
 							}
 						}
 					}
+					continue
 				}
-				continue
-			}
 
-			// if no tag found skip tag processing
-			if field.Tag == nil {
-				name := field.Names[0].Name
-				res.schema.Properties[name] = mp
-				continue
-			}
+				// if no tag found skip tag processing
+				if field.Tag == nil {
+					name := field.Names[0].Name
+					res.schema.Properties[name] = mp
+					continue
+				}
 
-			name := fieldNameFromTag(field.Tag.Value)
-			if name == "" {
-				name = field.Names[0].Name
-			}
+				name := fieldNameFromTag(field.Tag.Value)
+				if name == "" {
+					name = field.Names[0].Name
+				}
 
-			setSchemaProperties(res.schema, mp, field.Tag.Value, name)
+				setSchemaProperties(res.schema, mp, field.Tag.Value, name)
+			}
 		}
 	}
 }
