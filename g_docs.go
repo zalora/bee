@@ -450,13 +450,13 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						schema.Type = typeFormat[0]
 						schema.Format = typeFormat[1]
 					} else {
-						cmpath, m, mod, realTypes := getModel(schemaName)
+						m, mod, realTypes := getModel(schemaName)
 						schema.Ref = "#/definitions/" + m
 						if _, ok := modelsList[pkgpath+controllerName]; !ok {
 							modelsList[pkgpath+controllerName] = make(map[string]swagger.Schema, 0)
 						}
 						modelsList[pkgpath+controllerName][schemaName] = mod
-						appendModels(cmpath, pkgpath, controllerName, realTypes)
+						appendModels(pkgpath, controllerName, realTypes)
 					}
 					if isArray {
 						rs.Schema = &swagger.Schema{
@@ -496,7 +496,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 				pp := strings.Split(p[2], ".")
 				typ := pp[len(pp)-1]
 				if len(pp) >= 2 {
-					cmpath, m, mod, realTypes := getModel(p[2])
+					m, mod, realTypes := getModel(p[2])
 					para.Schema = &swagger.Schema{
 						Ref: "#/definitions/" + m,
 					}
@@ -504,7 +504,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						modelsList[pkgpath+controllerName] = make(map[string]swagger.Schema, 0)
 					}
 					modelsList[pkgpath+controllerName][typ] = mod
-					appendModels(cmpath, pkgpath, controllerName, realTypes)
+					appendModels(pkgpath, controllerName, realTypes)
 				} else {
 					isArray := false
 					paraType := ""
@@ -681,10 +681,10 @@ func getparams(str string) []string {
 	return r
 }
 
-func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTypes []string) {
+func getModel(str string) (objectname string, m swagger.Schema, realTypes []string) {
 	strs := strings.Split(str, ".")
 	objectname = strs[len(strs)-1]
-	pkgpath = strings.Join(strs[:len(strs)-1], "/")
+	pkgpath := strings.Join(strs[:len(strs)-1], "/")
 	curpath, _ := os.Getwd()
 	pkgRealpath := path.Join(curpath, pkgpath)
 	fileSet := token.NewFileSet()
@@ -708,13 +708,21 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Schema, realTyp
 						continue
 					}
 
+					pathInfo, err := generatePathInfo(fl)
+					if err != nil {
+						ColorLog("[ERRO] failed when generating path info: %v", err)
+						os.Exit(1)
+					}
+
 					packageName = pkg.Name
+					pathInfo[packageName] = pkgpath
 					res := &objectResource{
 						object:      d,
 						schema:      &m,
 						realTypes:   &realTypes,
 						astPkgs:     astPkgs,
 						packageName: packageName,
+						pathInfo:    pathInfo,
 					}
 					res.parse()
 				}
@@ -758,7 +766,7 @@ func (res *objectResource) parse() {
 	if st.Fields.List != nil {
 		res.schema.Properties = make(map[string]swagger.Propertie)
 		for _, field := range st.Fields.List {
-			mp := constructObjectPropertie(field.Type, res.packageName, res.realTypes)
+			mp := constructObjectPropertie(field.Type, res.packageName, res.realTypes, res.pathInfo)
 			if field.Names == nil {
 				for _, pkg := range res.astPkgs {
 					for _, fl := range pkg.Files {
@@ -822,7 +830,7 @@ func objectWithPackageName(object, packageName string) string {
 // constructObjectPropertie constructs a swagger.Propertie out of
 // an ast.Expr. This function recursively traverse all expression
 // until it reaches one of object or pre-defined basic golang type / primitive.
-func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]string) swagger.Propertie {
+func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]string, pathInfo map[string]string) swagger.Propertie {
 	var propertie swagger.Propertie
 
 	// basic Go types (primitives) can be directly translated into
@@ -854,14 +862,14 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 
 		// append object to realTypes to be traversed further by appendModels
 		// function.
-		*realTypes = append(*realTypes, object)
+		appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
 		return propertie
 	case *ast.ArrayType:
 		// Array Type is an array which can be directly stated to swagger doc
 		// type. But, the object of the array must be traversed further to know
 		// what the actual type is.
 		// Array Type example: []*int
-		object := constructObjectPropertie(f.Elt, packageName, realTypes)
+		object := constructObjectPropertie(f.Elt, packageName, realTypes, pathInfo)
 		propertie.Type = "array"
 		propertie.Items = &object
 		return propertie
@@ -871,7 +879,7 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 		// positioned in the `AdditionalProperties` field of swagger.Propertie.
 		// Swagger Doc only support string as the map key.
 		// Map Type example: map[string]Product
-		object := constructObjectPropertie(f.Value, packageName, realTypes)
+		object := constructObjectPropertie(f.Value, packageName, realTypes, pathInfo)
 		propertie.Type = "object"
 		propertie.AdditionalProperties = &object
 		return propertie
@@ -895,18 +903,19 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 		// type that needs the struct.
 		if _, ok := v.Type.(*ast.StructType); ok {
 			object := fmt.Sprint(field)
-			propertie.Ref = "#/definitions/" + object
-			*realTypes = append(*realTypes, object)
+			pkgObject := objectWithPackageName(object, packageName)
+			propertie.Ref = "#/definitions/" + pkgObject
+			appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
 			return propertie
 		}
 
 		// Construct the aliased type
-		return constructObjectPropertie(v.Type, packageName, realTypes)
+		return constructObjectPropertie(v.Type, packageName, realTypes, pathInfo)
 	case *ast.StructType:
 		propertie.Properties = make(map[string]swagger.Propertie)
 		for _, v := range f.Fields.List {
 			fieldPropertie := constructObjectPropertie(
-				v.Type, packageName, realTypes,
+				v.Type, packageName, realTypes, pathInfo,
 			)
 
 			if len(v.Names) == 0 {
@@ -931,14 +940,52 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 
 		propertie.Type = "object"
 		return propertie
+	case *ast.SelectorExpr:
+		// Selector Expression is an object that's located in external package.
+		// The object can be stated as ref in swagger.Propertie Ref field and
+		// then will be expanded and stated in swagger `definitions` from
+		// `appendModels` function.
+		object := fmt.Sprint(f)
+		pkgObject := objectWithPackageName(object, packageName)
+		propertie.Ref = "#/definitions/" + pkgObject
+		appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
+		return propertie
 	}
 
 	object := fmt.Sprint(field)
 	pkgObject := objectWithPackageName(object, packageName)
 	propertie.Ref = "#/definitions/" + pkgObject
-	*realTypes = append(*realTypes, object)
+	appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
 
 	return propertie
+}
+
+// appendObjectToRealTypes appends an object with its full path
+// from the root package to *realTypes array.
+func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map[string]string) {
+	if !strings.Contains(pkgObject, ".") {
+		*realTypes = append(*realTypes, pkgObject)
+		return
+	}
+
+	pkgObjectSplit := strings.Split(pkgObject, ".")
+
+	if len(pkgObjectSplit) != 2 {
+		ColorLog("[WARN] %v pkgObject passed to realTypes length should be 2\n", pkgObjectSplit)
+		return
+	}
+
+	pkg := pkgObjectSplit[0]
+	object := pkgObjectSplit[1]
+
+	realType := object
+	if v, ok := pathInfo[pkg]; ok && v != "" {
+		realType = v + "." + object
+	}
+
+	realType = strings.Trim(realType, "/")
+	realType = strings.ReplaceAll(realType, "/", ".")
+	*realTypes = append(*realTypes, realType)
 }
 
 func isBasicType(Type string) bool {
@@ -983,23 +1030,16 @@ func grepJSONTag(tag string) string {
 }
 
 // append models
-func appendModels(cmpath, pkgpath, controllerName string, realTypes []string) {
-	var p string
-	if cmpath != "" {
-		p = strings.Join(strings.Split(cmpath, "/"), ".") + "."
-	} else {
-		p = ""
-	}
+func appendModels(pkgpath, controllerName string, realTypes []string) {
 	for _, realType := range realTypes {
 		if realType != "" && !isBasicType(strings.TrimLeft(realType, "[]")) &&
 			!strings.HasPrefix(realType, "map") && !strings.HasPrefix(realType, "&") {
-			if _, ok := modelsList[pkgpath+controllerName][p+realType]; ok {
+			if _, ok := modelsList[pkgpath+controllerName][realType]; ok {
 				continue
 			}
-			//fmt.Printf(pkgpath + ":" + controllerName + ":" + cmpath + ":" + realType + "\n")
-			_, _, mod, newRealTypes := getModel(p + realType)
-			modelsList[pkgpath+controllerName][p+realType] = mod
-			appendModels(cmpath, pkgpath, controllerName, newRealTypes)
+			_, mod, newRealTypes := getModel(realType)
+			modelsList[pkgpath+controllerName][realType] = mod
+			appendModels(pkgpath, controllerName, newRealTypes)
 		}
 	}
 }
@@ -1117,4 +1157,53 @@ func validateSwaggerOperation(path, method string, methodOp *swagger.Operation) 
 			ColorLog("[WARN] default value must be present in Enum parameter for route %s '%s'\n", method, path)
 		}
 	}
+}
+
+// generatePathInfo generates all imported packages in a file into a map.
+// the name of the package will be used as the map key, and the path
+// to the package will be used as the map value.
+func generatePathInfo(file *ast.File) (map[string]string, error) {
+	pathInfo := make(map[string]string)
+
+	// currentPath of where the `bee` is run.
+	currentPath, err := os.Getwd()
+	if err != nil {
+		return pathInfo, err
+	}
+
+	goSrcPath := os.Getenv("GOPATH") + "/src/"
+	// basePath is the currentPath without $GOPATH + src prefix.
+	// eg. github.com/organization/repository/
+	basePath := strings.ReplaceAll(currentPath, goSrcPath, "")
+
+	// iterate through all imported packages in a file
+	// then create a package -> path dictionary out of it.
+	var importPath string
+	for _, v := range file.Imports {
+
+		// skip if the importPath is from external (outside org) package.
+		importPath = strings.Trim(v.Path.Value, "\"")
+		if !strings.HasPrefix(importPath, basePath) {
+			continue
+		}
+
+		importPath = strings.ReplaceAll(importPath, basePath, "")
+
+		// if the imported package is named, then use the name for the key.
+		// eg. rvsdk "github.com/zalora/revery-sdk-go/revery" ->
+		// map["rvsdk] = "github.com/zalora/revery-sdk-go/revery"
+		if v.Name != nil {
+			pathInfo[v.Name.Name] = importPath
+			continue
+		}
+
+		// for unnamed imported package.
+		// eg. "github.com/zalora/gfg-sdk-go/gfg" ->
+		// map["gfg"] = "github.com/zalora/gfg-sdk-go/gfg"
+		packageNames := strings.Split(importPath, "/")
+		name := packageNames[len(packageNames)-1]
+		pathInfo[name] = importPath
+	}
+
+	return pathInfo, nil
 }
