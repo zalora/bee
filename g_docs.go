@@ -929,6 +929,35 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 
 		// Construct the aliased type
 		return constructObjectPropertie(v.Type, packageName, realTypes)
+	case *ast.StructType:
+		propertie.Properties = make(map[string]swagger.Propertie)
+		for _, v := range f.Fields.List {
+			fieldPropertie := constructObjectPropertie(
+				v.Type, packageName, realTypes,
+			)
+
+			if len(v.Names) == 0 {
+				ColorLog("[WARN] %v: Unnamed struct field is currently not supported\n", v.Type)
+				continue
+			}
+
+			// if no tag is found, skip tag processing.
+			if v.Tag == nil {
+				name := v.Names[0].Name
+				propertie.Properties[name] = fieldPropertie
+				continue
+			}
+
+			name := fieldNameFromTag(v.Tag.Value)
+			if name == "" {
+				name = v.Names[0].Name
+			}
+
+			propertie.Properties[name] = fieldPropertie
+		}
+
+		propertie.Type = "object"
+		return propertie
 	}
 
 	object := fmt.Sprint(field)
@@ -1014,4 +1043,39 @@ func urlReplace(src string) string {
 		}
 	}
 	return strings.Join(pt, "/")
+}
+
+// fieldNameFromTag processes a tag attached to a struct field to get the
+// respective name according to its encoding (thrift/json).  if a tag explicitly
+// wants to be ignored then the name returned will be an empty string.
+func fieldNameFromTag(tag string) string {
+	structTag := reflect.StructTag(strings.Trim(tag, "`"))
+
+	// skip ignored field.
+	if ignore := structTag.Get("ignore"); ignore != "" {
+		return ""
+	}
+
+	// set json tag name as field name.
+	jsonTag := structTag.Get("json")
+	jsonTagValues := strings.Split(jsonTag, ",")
+
+	// skip property with `-` tag.
+	if len(jsonTagValues) > 0 && jsonTagValues[0] == "-" {
+		return ""
+	}
+
+	var name string
+	if len(jsonTagValues) > 0 && jsonTagValues[0] != "omitempty" {
+		name = jsonTagValues[0]
+	}
+
+	// overwrite with thrift tag name if any.
+	thriftTag := structTag.Get("thrift")
+	thriftTagValues := strings.Split(thriftTag, ",")
+	if len(thriftTagValues) > 0 && thriftTagValues[0] != "" {
+		name = thriftTagValues[0]
+	}
+
+	return name
 }
