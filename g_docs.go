@@ -531,6 +531,9 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						para.Enum = strings.Split(p[4], ",")
 						if len(p) > 6 {
 							para.Default = p[5]
+							if !contains(para.Enum, para.Default) {
+								ColorLog("[WARN] %s in %s(): Default value must be present in `enum`\n", pkgpath, funcName)
+							}
 						}
 					} else {
 						ColorLog("[WARN][%s.%s] Unknow param type: %s\n", controllerName, funcName, typ)
@@ -639,6 +642,11 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 		case "OPTIONS":
 			item.Options = &opts
 		}
+
+		if len(opts.Responses) == 0 {
+			ColorLog("[WARN] missing response (@Success / @Failure) swagger doc for route `%s`\n", routerPath)
+		}
+
 		controllerList[pkgpath+controllerName][routerPath] = item
 	}
 	return nil
@@ -1062,4 +1070,14 @@ func setSchemaProperties(schema *swagger.Schema, fieldPropertie swagger.Properti
 	}
 
 	schema.Properties[name] = fieldPropertie
+}
+
+func contains(slice []string, val string) bool {
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+
+	return false
 }
