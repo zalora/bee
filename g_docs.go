@@ -647,6 +647,12 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 			ColorLog("[WARN] missing response (@Success / @Failure) swagger doc for route `%s`\n", routerPath)
 		}
 
+		for status, resp := range opts.Responses {
+			if resp.Description == "" {
+				ColorLog("[WARN] missing description from %s Response for `%s` router\n", status, opts.Description)
+			}
+		}
+
 		controllerList[pkgpath+controllerName][routerPath] = item
 	}
 	return nil
