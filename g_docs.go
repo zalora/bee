@@ -177,6 +177,9 @@ func generateDocs(curpath string) {
 			}
 		}
 	}
+
+	warnSwaggerError(rootapi)
+
 	os.Mkdir(path.Join(curpath, "swagger"), 0755)
 	fd, err := os.Create(path.Join(curpath, "swagger", "swagger.json"))
 	fdyml, err := os.Create(path.Join(curpath, "swagger", "swagger.yml"))
@@ -531,9 +534,6 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 						para.Enum = strings.Split(p[4], ",")
 						if len(p) > 6 {
 							para.Default = p[5]
-							if !contains(para.Enum, para.Default) {
-								ColorLog("[WARN] %s in %s(): Default value must be present in `enum`\n", pkgpath, funcName)
-							}
 						}
 					} else {
 						ColorLog("[WARN][%s.%s] Unknow param type: %s\n", controllerName, funcName, typ)
@@ -641,16 +641,6 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 			item.Head = &opts
 		case "OPTIONS":
 			item.Options = &opts
-		}
-
-		if len(opts.Responses) == 0 {
-			ColorLog("[WARN] missing response (@Success / @Failure) swagger doc for route `%s`\n", routerPath)
-		}
-
-		for status, resp := range opts.Responses {
-			if resp.Description == "" {
-				ColorLog("[WARN] missing description from %s Response for `%s` router\n", status, opts.Description)
-			}
 		}
 
 		controllerList[pkgpath+controllerName][routerPath] = item
@@ -1086,4 +1076,45 @@ func contains(slice []string, val string) bool {
 	}
 
 	return false
+}
+
+func warnSwaggerError(swaggerDoc swagger.Swagger) {
+	for path, item := range swaggerDoc.Paths {
+		if item == nil {
+			continue
+		}
+		validateSwaggerOperation(path, "GET", item.Get)
+		validateSwaggerOperation(path, "PUT", item.Put)
+		validateSwaggerOperation(path, "POST", item.Post)
+		validateSwaggerOperation(path, "DELETE", item.Delete)
+		validateSwaggerOperation(path, "OPTIONS", item.Options)
+		validateSwaggerOperation(path, "HEAD", item.Head)
+		validateSwaggerOperation(path, "PATCH", item.Patch)
+	}
+}
+
+func validateSwaggerOperation(path, name string, op *swagger.Operation) {
+	if op == nil {
+		return
+	}
+
+	if len(op.Responses) == 0 {
+		ColorLog("[WARN] missing response [@Success, @Failure] for route %s '%s'\n", name, path)
+	}
+
+	for status, response := range op.Responses {
+		if response.Description == "" {
+			ColorLog("[WARN] missing description from '%s' Response for route %s '%s'\n", status, name, path)
+		}
+	}
+
+	for _, param := range op.Parameters {
+		if len(param.Enum) == 0 || param.Default == "" {
+			continue
+		}
+
+		if !contains(param.Enum, param.Default) {
+			ColorLog("[WARN] default value must be present in Enum parameter for route %s '%s'\n", name, path)
+		}
+	}
 }
