@@ -642,7 +642,6 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 		case "OPTIONS":
 			item.Options = &opts
 		}
-
 		controllerList[pkgpath+controllerName][routerPath] = item
 	}
 	return nil
@@ -1093,28 +1092,29 @@ func warnSwaggerError(swaggerDoc swagger.Swagger) {
 	}
 }
 
-func validateSwaggerOperation(path, name string, op *swagger.Operation) {
-	if op == nil {
+func validateSwaggerOperation(path, method string, methodOp *swagger.Operation) {
+	// There passed HTTP Method is not existing in the endpoint.
+	if methodOp == nil {
 		return
 	}
 
-	if len(op.Responses) == 0 {
-		ColorLog("[WARN] missing response [@Success, @Failure] for route %s '%s'\n", name, path)
+	if len(methodOp.Responses) == 0 {
+		ColorLog("[WARN] missing response [@Success, @Failure] for route %s '%s'\n", method, path)
 	}
 
-	for status, response := range op.Responses {
+	for status, response := range methodOp.Responses {
 		if response.Description == "" {
-			ColorLog("[WARN] missing description from '%s' Response for route %s '%s'\n", status, name, path)
+			ColorLog("[WARN] missing description from '%s' Response for route %s '%s'\n", status, method, path)
 		}
 	}
 
-	for _, param := range op.Parameters {
+	for _, param := range methodOp.Parameters {
 		if len(param.Enum) == 0 || param.Default == "" {
 			continue
 		}
 
 		if !contains(param.Enum, param.Default) {
-			ColorLog("[WARN] default value must be present in Enum parameter for route %s '%s'\n", name, path)
+			ColorLog("[WARN] default value must be present in Enum parameter for route %s '%s'\n", method, path)
 		}
 	}
 }
