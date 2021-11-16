@@ -1093,7 +1093,7 @@ func warnSwaggerError(swaggerDoc swagger.Swagger) {
 }
 
 func validateSwaggerOperation(path, method string, methodOp *swagger.Operation) {
-	// There passed HTTP Method is not existing in the endpoint.
+	// The passed HTTP Method does not exist in the endpoint.
 	if methodOp == nil {
 		return
 	}
