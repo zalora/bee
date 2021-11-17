@@ -177,6 +177,9 @@ func generateDocs(curpath string) {
 			}
 		}
 	}
+
+	warnSwaggerError(rootapi)
+
 	os.Mkdir(path.Join(curpath, "swagger"), 0755)
 	fd, err := os.Create(path.Join(curpath, "swagger", "swagger.json"))
 	fdyml, err := os.Create(path.Join(curpath, "swagger", "swagger.yml"))
@@ -1062,4 +1065,56 @@ func setSchemaProperties(schema *swagger.Schema, fieldPropertie swagger.Properti
 	}
 
 	schema.Properties[name] = fieldPropertie
+}
+
+func contains(slice []string, val string) bool {
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+
+	return false
+}
+
+func warnSwaggerError(swaggerDoc swagger.Swagger) {
+	for path, item := range swaggerDoc.Paths {
+		if item == nil {
+			continue
+		}
+		validateSwaggerOperation(path, "GET", item.Get)
+		validateSwaggerOperation(path, "PUT", item.Put)
+		validateSwaggerOperation(path, "POST", item.Post)
+		validateSwaggerOperation(path, "DELETE", item.Delete)
+		validateSwaggerOperation(path, "OPTIONS", item.Options)
+		validateSwaggerOperation(path, "HEAD", item.Head)
+		validateSwaggerOperation(path, "PATCH", item.Patch)
+	}
+}
+
+func validateSwaggerOperation(path, method string, methodOp *swagger.Operation) {
+	// The passed HTTP Method does not exist in the endpoint.
+	if methodOp == nil {
+		return
+	}
+
+	if len(methodOp.Responses) == 0 {
+		ColorLog("[WARN] missing response [@Success, @Failure] for route %s '%s'\n", method, path)
+	}
+
+	for status, response := range methodOp.Responses {
+		if response.Description == "" {
+			ColorLog("[WARN] missing description from '%s' Response for route %s '%s'\n", status, method, path)
+		}
+	}
+
+	for _, param := range methodOp.Parameters {
+		if len(param.Enum) == 0 || param.Default == "" {
+			continue
+		}
+
+		if !contains(param.Enum, param.Default) {
+			ColorLog("[WARN] default value must be present in Enum parameter for route %s '%s'\n", method, path)
+		}
+	}
 }
