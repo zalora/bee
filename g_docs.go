@@ -808,6 +808,8 @@ func (res *objectResource) parse() {
 				setSchemaProperties(res.schema, mp, field.Tag.Value, name)
 			}
 		}
+	default:
+		ColorLog("[WARN] %v type is not supported yet\n", t)
 	}
 }
 
