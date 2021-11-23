@@ -842,9 +842,12 @@ func objectWithPackageName(object, packageName string) string {
 func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]string, pathInfo map[string]string) swagger.Propertie {
 	var propertie swagger.Propertie
 
+	// check if there is a basic-type disguised as an object
+	object := objectWithPackageName(fmt.Sprint(field), "")
+
 	// basic Go types (primitives) can be directly translated into
 	// swagger-supported type with pre-defined mapping.
-	if basicType, ok := basicTypes[fmt.Sprint(field)]; ok {
+	if basicType, ok := basicTypes[object]; ok {
 		propInfo := strings.Split(basicType, ":")
 
 		if len(propInfo) != 2 {
@@ -961,7 +964,6 @@ func constructObjectPropertie(field ast.Expr, packageName string, realTypes *[]s
 		return propertie
 	}
 
-	object := fmt.Sprint(field)
 	pkgObject := objectWithPackageName(object, packageName)
 	propertie.Ref = "#/definitions/" + pkgObject
 	appendObjectToRealTypes(realTypes, pkgObject, pathInfo)
@@ -987,7 +989,7 @@ func appendObjectToRealTypes(realTypes *[]string, pkgObject string, pathInfo map
 	pkg := pkgObjectSplit[0]
 	object := pkgObjectSplit[1]
 
-	realType := object
+	realType := pkgObject
 	if v, ok := pathInfo[pkg]; ok && v != "" {
 		realType = v + "." + object
 	}
@@ -1026,6 +1028,7 @@ var basicTypes = map[string]string{
 	"complex128":  "number:double",
 	"byte":        "string:byte",
 	"rune":        "string:byte",
+	"time.Time":   "string:datetime",
 }
 
 // regexp get json tag
@@ -1041,15 +1044,12 @@ func grepJSONTag(tag string) string {
 // append models
 func appendModels(pkgpath, controllerName string, realTypes []string) {
 	for _, realType := range realTypes {
-		if realType != "" && !isBasicType(strings.TrimLeft(realType, "[]")) &&
-			!strings.HasPrefix(realType, "map") && !strings.HasPrefix(realType, "&") {
-			if _, ok := modelsList[pkgpath+controllerName][realType]; ok {
-				continue
-			}
-			_, mod, newRealTypes := getModel(realType)
-			modelsList[pkgpath+controllerName][realType] = mod
-			appendModels(pkgpath, controllerName, newRealTypes)
+		if _, ok := modelsList[pkgpath+controllerName][realType]; ok {
+			continue
 		}
+		_, mod, newRealTypes := getModel(realType)
+		modelsList[pkgpath+controllerName][realType] = mod
+		appendModels(pkgpath, controllerName, newRealTypes)
 	}
 }
 
