@@ -1,6 +1,6 @@
 module github.com/zalora/bee
 
-go 1.14
+go 1.16
 
 replace github.com/astaxie/beego => github.com/zalora/beego v1.7.3
 
