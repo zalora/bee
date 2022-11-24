@@ -32,7 +32,7 @@ import (
 	"unicode"
 
 	"golang.org/x/mod/modfile"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/astaxie/beego/swagger"
 	"github.com/astaxie/beego/utils"
@@ -192,7 +192,7 @@ func generateDocs(curpath string) {
 	defer fdyml.Close()
 	defer fd.Close()
 	dt, err := json.MarshalIndent(rootapi, "", "    ")
-	dtyml, erryml := yaml.Marshal(rootapi)
+	dtyml, erryml := yaml.Marshal(&rootapi)
 	if err != nil || erryml != nil {
 		panic(err)
 	}
