@@ -89,7 +89,9 @@ func generateDocs(curpath string) {
 				} else if strings.HasPrefix(s, "@Title") {
 					rootapi.Infos.Title = strings.TrimSpace(s[len("@Title"):])
 				} else if strings.HasPrefix(s, "@Description") {
-					rootapi.Infos.Description = strings.TrimSpace(s[len("@Description"):])
+					desc := strings.TrimSpace(s[len("@Description"):])
+					desc = strings.ReplaceAll(desc, "\\n", "\n")
+					rootapi.Infos.Description = desc
 				} else if strings.HasPrefix(s, "@TermsOfServiceUrl") {
 					rootapi.Infos.TermsOfService = strings.TrimSpace(s[len("@TermsOfServiceUrl"):])
 				} else if strings.HasPrefix(s, "@Contact") {
