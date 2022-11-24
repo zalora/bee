@@ -57,15 +57,15 @@ func show(out io.Writer, content string) {
 	}
 
 	err = t.Execute(out, vars{
-		runtime.Version(),
-		runtime.GOOS,
-		runtime.GOARCH,
-		runtime.NumCPU(),
-		os.Getenv("GOPATH"),
-		runtime.GOROOT(),
-		runtime.Compiler,
-		version,
-		getBeegoVersion(),
+		GoVersion:    runtime.Version(),
+		GOOS:         runtime.GOOS,
+		GOARCH:       runtime.GOARCH,
+		NumCPU:       runtime.NumCPU(),
+		GOPATH:       os.Getenv("GOPATH"),
+		GOROOT:       runtime.GOROOT(),
+		Compiler:     runtime.Compiler,
+		BeeVersion:   version,
+		BeegoVersion: getBeegoVersion(),
 	})
 	if err != nil {
 		panic(err)

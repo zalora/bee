@@ -31,6 +31,7 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/mod/modfile"
 	"gopkg.in/yaml.v2"
 
 	"github.com/astaxie/beego/swagger"
@@ -48,6 +49,8 @@ const (
 	content_type_thrift_json_webcontent_v1   = "application/vnd.zalora.webcontent.v1+thrift.json"
 	content_type_thrift_binary               = "application/vnd.apache.thrift.binary"
 	content_type_thrift_json                 = "application/vnd.apache.thrift.json"
+
+	modfileName = "go.mod"
 )
 
 var pkgCache map[string]struct{} //pkg:controller:function:comments comments: key:value
@@ -1174,16 +1177,10 @@ func validateSwaggerOperation(path, method string, methodOp *swagger.Operation) 
 func generatePathInfo(file *ast.File) (map[string]string, error) {
 	pathInfo := make(map[string]string)
 
-	// currentPath of where the `bee` is run.
-	currentPath, err := os.Getwd()
+	basePath, err := getPackageName()
 	if err != nil {
 		return pathInfo, err
 	}
-
-	goSrcPath := os.Getenv("GOPATH") + "/src/"
-	// basePath is the currentPath without $GOPATH + src prefix.
-	// eg. github.com/organization/repository/
-	basePath := strings.ReplaceAll(currentPath, goSrcPath, "")
 
 	// iterate through all imported packages in a file
 	// then create a package -> path dictionary out of it.
@@ -1215,4 +1212,25 @@ func generatePathInfo(file *ast.File) (map[string]string, error) {
 	}
 
 	return pathInfo, nil
+}
+
+func getPackageName() (string, error) {
+	// Go modules :)
+	f, err := os.ReadFile(modfileName)
+	if err == nil {
+		mf, err := modfile.Parse(modfileName, f, nil)
+		if err == nil {
+			return mf.Module.Mod.Path, nil
+		}
+	}
+
+	// Gopath :(
+	currentPath, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	goSrcPath := os.Getenv("GOPATH") + "/src/"
+
+	return strings.ReplaceAll(currentPath, goSrcPath, ""), nil
 }
