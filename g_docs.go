@@ -1225,12 +1225,12 @@ func getPackageName() (string, error) {
 	}
 
 	// Gopath :(
-	currentPath, err := os.Getwd()
+	pwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 
-	goSrcPath := os.Getenv("GOPATH") + "/src/"
+	gopathSRC := os.Getenv("GOPATH") + "/src/"
 
-	return strings.ReplaceAll(currentPath, goSrcPath, ""), nil
+	return strings.ReplaceAll(pwd, gopathSRC, ""), nil
 }
