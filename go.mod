@@ -11,5 +11,5 @@ require (
 	github.com/lib/pq v1.7.0
 	github.com/smartystreets/goconvey v1.6.4
 	golang.org/x/mod v0.7.0
-	gopkg.in/yaml.v2 v2.3.0
+	gopkg.in/yaml.v3 v3.0.1
 )
