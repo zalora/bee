@@ -62,7 +62,7 @@ func generatePostman(curpath string, sAPIs swagger.Swagger) error {
 			return true
 		}
 
-		return p.Items[i].Name < p.Items[i].Name
+		return p.Items[i].Name < p.Items[j].Name
 	})
 
 	_, err := json.Marshal(p)
