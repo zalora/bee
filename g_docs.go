@@ -203,6 +203,8 @@ func generateDocs(curpath string) {
 	if err != nil || erryml != nil {
 		panic(err)
 	}
+
+	generatePostman(curpath, rootapi)
 }
 
 // return version and the others params
