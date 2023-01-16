@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/astaxie/beego/swagger"
@@ -10,7 +12,7 @@ import (
 )
 
 var (
-	description = "# DORAEMON POSTMAN COLLECTION\n## Usage\nPut `{{DOR_BASE_URL}}` as environment. For more context, refer to: https://learning.postman.com/docs/sending-requests/variables/."
+	description = `# DORAEMON POSTMAN COLLECTION\n## Usage\nPut ` + "`{{DOR_BASE_URL}}`" + `as environment. For more context, refer to: https://learning.postman.com/docs/sending-requests/variables/.`
 )
 
 func generatePostman(curpath string, sAPIs swagger.Swagger) {
@@ -53,6 +55,14 @@ func generatePostman(curpath string, sAPIs swagger.Swagger) {
 			addItemToCollection(sURL, c, patch, postman.Patch)
 		}
 	}
+
+	sort.Slice(p.Items, func(i, j int) bool {
+		if strings.EqualFold(p.Items[i].Name, "customers") {
+			return true
+		}
+
+		return p.Items[i].Name < p.Items[i].Name
+	})
 
 	pd, err := os.Create(path.Join(curpath, "swagger", "postman-collection.json"))
 	if err != nil {
@@ -101,9 +111,10 @@ func addItemToCollection(url string, collection *postman.Items, op *swagger.Oper
 				Description: param.Description,
 			})
 		case "query":
+			description := param.Description
 			queryParams = append(queryParams, &postman.QueryParam{
 				Key:         param.Name,
-				Description: &param.Description,
+				Description: &description,
 			})
 		}
 	}
@@ -116,6 +127,16 @@ func addItemToCollection(url string, collection *postman.Items, op *swagger.Oper
 		headers = append(headers, &postman.Header{
 			Key:   "Content-Type",
 			Value: "multipart/form-data",
+		})
+	}
+
+	var responses []*postman.Response
+	for status, response := range op.Responses {
+		s, _ := strconv.Atoi(status)
+		responses = append(responses, &postman.Response{
+			Status: status,
+			Code:   s,
+			Name:   response.Description,
 		})
 	}
 
@@ -134,6 +155,6 @@ func addItemToCollection(url string, collection *postman.Items, op *swagger.Oper
 			Header: headers,
 			Body:   body,
 		},
-		Responses: nil,
+		Responses: responses,
 	}))
 }
