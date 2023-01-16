@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path"
 	"sort"
@@ -15,7 +16,7 @@ var (
 	description = `# DORAEMON POSTMAN COLLECTION\n## Usage\nPut ` + "`{{DOR_BASE_URL}}`" + `as environment. For more context, refer to: https://learning.postman.com/docs/sending-requests/variables/.`
 )
 
-func generatePostman(curpath string, sAPIs swagger.Swagger) {
+func generatePostman(curpath string, sAPIs swagger.Swagger) error {
 	p := postman.CreateCollection(sAPIs.Infos.Title, description)
 	collection := make(map[string]*postman.Items)
 
@@ -64,15 +65,22 @@ func generatePostman(curpath string, sAPIs swagger.Swagger) {
 		return p.Items[i].Name < p.Items[i].Name
 	})
 
+	_, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+
 	pd, err := os.Create(path.Join(curpath, "swagger", "postman-collection.json"))
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer pd.Close()
 	err = p.Write(pd, postman.V210)
 	if err != nil {
-		panic(err)
+		return err
 	}
+
+	return nil
 }
 
 func upsertNewCollection(p *postman.Collection, collection map[string]*postman.Items, s string) *postman.Items {
