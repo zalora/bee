@@ -140,8 +140,12 @@ func addItemToCollection(url string, collection *postman.Items, op *swagger.Oper
 		})
 	}
 
+	name := op.OperationID
+	if opIDs := strings.Split(op.OperationID, "."); len(opIDs) > 1 {
+		name = opIDs[1]
+	}
 	collection.AddItem(postman.CreateItem(postman.Item{
-		Name:        op.OperationID,
+		Name:        name,
 		Description: op.Description,
 		ID:          op.OperationID,
 		Request: &postman.Request{
