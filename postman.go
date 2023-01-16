@@ -16,7 +16,18 @@ var (
 	description = `# DORAEMON POSTMAN COLLECTION\n## Usage\nPut ` + "`{{DOR_BASE_URL}}`" + `as environment. For more context, refer to: https://learning.postman.com/docs/sending-requests/variables/.`
 )
 
-func generatePostman(curpath string, sAPIs swagger.Swagger) error {
+func generatePostman(curpath string) error {
+	fd, err := os.ReadFile(path.Join(curpath, "swagger", "swagger.json"))
+	if err != nil {
+		return err
+	}
+
+	var sAPIs swagger.Swagger
+	err = json.Unmarshal(fd, &sAPIs)
+	if err != nil {
+		return err
+	}
+
 	p := postman.CreateCollection(sAPIs.Infos.Title, description)
 	collection := make(map[string]*postman.Items)
 
@@ -65,8 +76,7 @@ func generatePostman(curpath string, sAPIs swagger.Swagger) error {
 		return p.Items[i].Name < p.Items[j].Name
 	})
 
-	_, err := json.Marshal(p)
-	if err != nil {
+	if _, err = json.Marshal(p); err != nil {
 		return err
 	}
 
