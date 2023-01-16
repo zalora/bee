@@ -127,7 +127,7 @@ func addItemToCollection(url string, collection *postman.Items, op *swagger.Oper
 		}
 	}
 
-	if body != nil {
+	if len(formData) > 0 {
 		body = &postman.Body{
 			Mode: "formdata",
 		}
