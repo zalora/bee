@@ -47,6 +47,9 @@ bee generate migration [migrationfile] [-fields=""]
 bee generate docs
     generate swagger doc file
 
+bee generate postman
+    generate postman collection file
+
 bee generate test [routerfile]
     generate testcase
 
@@ -127,6 +130,11 @@ func generateCode(cmd *Command, args []string) int {
 		generateScaffold(sname, fields.String(), currpath, driver.String(), conn.String())
 	case "docs":
 		generateDocs(currpath)
+	case "postman":
+		err := generatePostman(currpath)
+		if err != nil {
+			ColorLogS("[ERR] Could not generate postman: %s", err)
+		}
 	case "appcode":
 		// load config
 		err := loadConfig()
