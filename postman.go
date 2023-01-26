@@ -32,6 +32,13 @@ func generatePostman(curpath string) error {
 	collection := make(map[string]*postman.Items)
 
 	for sURL, sItem := range sAPIs.Paths {
+		sURL = sAPIs.BasePath + sURL
+
+		// Postman uses `:pathVariable` instead of swagger's `{pathVariable}`
+		// format.
+		sURL = strings.ReplaceAll(sURL, "{", ":")
+		sURL = strings.ReplaceAll(sURL, "}", "")
+
 		if get := sItem.Get; get != nil {
 			c := upsertNewCollection(p, collection, get.Tags[0])
 			addItemToCollection(sURL, c, get, postman.Get)
