@@ -128,57 +128,87 @@ func generateDocs(curpath string) {
 		}
 		analisyscontrollerPkg(localName, im.Path.Value)
 	}
-	for _, d := range f.Decls {
-		switch specDecl := d.(type) {
-		case *ast.FuncDecl:
-			for _, l := range specDecl.Body.List {
-				switch stmt := l.(type) {
-				case *ast.AssignStmt:
-					for _, l := range stmt.Rhs {
-						if v, ok := l.(*ast.CallExpr); ok {
-							// analisys NewNamespace, it will return version and the subfunction
-							if selName := v.Fun.(*ast.SelectorExpr).Sel.String(); selName != "NewNamespace" {
+
+	for _, decl := range f.Decls {
+		funcDecl, isFuncDecl := decl.(*ast.FuncDecl)
+		if !isFuncDecl {
+			continue
+		}
+
+		for _, stmt := range funcDecl.Body.List {
+			assignStmt, isAssignStmt := stmt.(*ast.AssignStmt)
+			if !isAssignStmt {
+				continue
+			}
+
+			for _, rhs := range assignStmt.Rhs {
+				callExpr, isCallExpr := rhs.(*ast.CallExpr)
+				if !isCallExpr {
+					continue
+				}
+
+				selExpr, isSelectorExpr := callExpr.Fun.(*ast.SelectorExpr)
+				if !isSelectorExpr {
+					continue
+				}
+
+				if selExpr.Sel.String() != "NewNamespace" {
+					continue
+				}
+
+				version, params := analisysNewNamespace(callExpr)
+				if rootapi.BasePath == "" && version != "" {
+					rootapi.BasePath = version
+				}
+
+				for _, param := range params {
+					innerCallExpr, isInnerCallExpr := param.(*ast.CallExpr)
+					if !isInnerCallExpr {
+						continue
+					}
+
+					innerSelExpr, isInnerSelectorExpr := innerCallExpr.Fun.(*ast.SelectorExpr)
+					if !isInnerSelectorExpr {
+						continue
+					}
+
+					if innerSelExpr.Sel.String() == "NSNamespace" {
+						s, innerParams := analisysNewNamespace(innerCallExpr)
+						for _, innerParam := range innerParams {
+							innerInnerCallExpr, isInnerInnerCallExpr := innerParam.(*ast.CallExpr)
+							if !isInnerInnerCallExpr {
 								continue
 							}
-							version, params := analisysNewNamespace(v)
-							if rootapi.BasePath == "" && version != "" {
-								rootapi.BasePath = version
+
+							innerInnerSelExpr, isInnerInnerSelectorExpr := innerInnerCallExpr.Fun.(*ast.SelectorExpr)
+							if !isInnerInnerSelectorExpr {
+								continue
 							}
-							for _, p := range params {
-								switch pp := p.(type) {
-								case *ast.CallExpr:
-									controllerName := ""
-									if selname := pp.Fun.(*ast.SelectorExpr).Sel.String(); selname == "NSNamespace" {
-										s, params := analisysNewNamespace(pp)
-										for _, sp := range params {
-											switch pp := sp.(type) {
-											case *ast.CallExpr:
-												if pp.Fun.(*ast.SelectorExpr).Sel.String() == "NSInclude" {
-													controllerName = analisysNSInclude(s, pp)
-													if v, ok := controllerComments[controllerName]; ok {
-														rootapi.Tags = append(rootapi.Tags, swagger.Tag{
-															Name:        strings.Trim(s, "/"),
-															Description: v,
-														})
-													}
-												}
-											}
-										}
-									} else if selname == "NSInclude" {
-										controllerName = analisysNSInclude("", pp)
-										if v, ok := controllerComments[controllerName]; ok {
-											rootapi.Tags = append(rootapi.Tags, swagger.Tag{
-												Name:        controllerName, // if the NSInclude has no prefix, we use the controllername as the tag
-												Description: v,
-											})
-										}
-									}
+
+							if innerInnerSelExpr.Sel.String() == "NSInclude" {
+								controllerName := analisysNSInclude(s, innerInnerCallExpr)
+								if v, ok := controllerComments[controllerName]; ok {
+									rootapi.Tags = append(rootapi.Tags, swagger.Tag{
+										Name:        strings.Trim(s, "/"),
+										Description: v,
+									})
 								}
+								continue
 							}
 						}
+					}
 
+					if innerSelExpr.Sel.String() == "NSInclude" {
+						controllerName := analisysNSInclude("", innerCallExpr)
+						if v, ok := controllerComments[controllerName]; ok {
+							rootapi.Tags = append(rootapi.Tags, swagger.Tag{
+								Name:        controllerName, // if the NSInclude has no prefix, we use the controllername as the tag
+								Description: v,
+							})
+						}
 					}
 				}
+
 			}
 		}
 	}
