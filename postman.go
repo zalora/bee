@@ -14,6 +14,17 @@ import (
 
 var (
 	description = `# DORAEMON POSTMAN COLLECTION\n## Usage\nPut ` + "`{{DOR_BASE_URL}}`" + `as environment. For more context, refer to: https://learning.postman.com/docs/sending-requests/variables/.`
+
+	baseHeaders = []*postman.Header{
+		{
+			Key:   "Accept",
+			Value: "application/json",
+		},
+		{
+			Key:   "Content-Language",
+			Value: "{{DOR_CONTENT_LANGUAGE}}",
+		},
+	}
 )
 
 func generatePostman(curpath string) error {
@@ -111,11 +122,6 @@ func upsertNewCollection(p *postman.Collection, collection map[string]*postman.I
 
 func addItemToCollection(url string, collection *postman.Items, op *swagger.Operation, method postman.Method) {
 	var headers []*postman.Header
-	headers = append(headers, &postman.Header{
-		Key:   "Accept",
-		Value: "application/json",
-	})
-
 	var variables []*postman.Variable
 	var queryParams []*postman.QueryParam
 	var body *postman.Body
@@ -181,7 +187,7 @@ func addItemToCollection(url string, collection *postman.Items, op *swagger.Oper
 				Variables: variables,
 			},
 			Method: method,
-			Header: headers,
+			Header: append(baseHeaders, headers...),
 			Body:   body,
 		},
 		Responses: responses,
