@@ -15,7 +15,7 @@ import (
 var (
 	description = `# DORAEMON POSTMAN COLLECTION\n## Usage\nPut ` + "`{{DOR_BASE_URL}}`" + `as environment. For more context, refer to: https://learning.postman.com/docs/sending-requests/variables/.`
 
-	baseHeaders []*postman.Header = []*postman.Header{
+	baseHeaders = []*postman.Header{
 		{
 			Key:   "Accept",
 			Value: "application/json",
@@ -23,10 +23,6 @@ var (
 		{
 			Key:   "Content-Language",
 			Value: "{{DOR_CONTENT_LANGUAGE}}",
-		},
-		{
-			Key:   "User-Agent",
-			Value: "{{DOR_USER_AGENT}}",
 		},
 	}
 )
