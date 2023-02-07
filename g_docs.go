@@ -57,7 +57,7 @@ var pkgCache map[string]struct{} //pkg:controller:function:comments comments: ke
 var controllerComments map[string]string
 var importlist map[string]string
 var controllerList map[string]map[string]*swagger.Item //controllername Paths items
-var modelsList map[string]map[string]swagger.Schema
+var modelsList map[string]swagger.Schema
 var rootapi swagger.Swagger
 
 func init() {
@@ -65,7 +65,7 @@ func init() {
 	controllerComments = make(map[string]string)
 	importlist = make(map[string]string)
 	controllerList = make(map[string]map[string]*swagger.Item)
-	modelsList = make(map[string]map[string]swagger.Schema)
+	modelsList = make(map[string]swagger.Schema)
 }
 
 func generateDocs(curpath string) {
@@ -501,10 +501,7 @@ func parserComments(debug bool, comments *ast.CommentGroup, funcName, controller
 					} else {
 						m, mod, realTypes := getModel(schemaName)
 						schema.Ref = "#/definitions/" + m
-						if _, ok := modelsList[pkgpath+controllerName]; !ok {
-							modelsList[pkgpath+controllerName] = make(map[string]swagger.Schema, 0)
-						}
-						modelsList[pkgpath+controllerName][schemaName] = mod
+						modelsList[schemaName] = mod
 						appendModels(pkgpath, controllerName, realTypes)
 					}
 					if isArray {
@@ -549,10 +546,7 @@ func parserComments(debug bool, comments *ast.CommentGroup, funcName, controller
 					para.Schema = &swagger.Schema{
 						Ref: "#/definitions/" + m,
 					}
-					if _, ok := modelsList[pkgpath+controllerName]; !ok {
-						modelsList[pkgpath+controllerName] = make(map[string]swagger.Schema, 0)
-					}
-					modelsList[pkgpath+controllerName][typ] = mod
+					modelsList[typ] = mod
 					appendModels(pkgpath, controllerName, realTypes)
 				} else {
 					isArray := false
@@ -1093,11 +1087,11 @@ func grepJSONTag(tag string) string {
 // append models
 func appendModels(pkgpath, controllerName string, realTypes []string) {
 	for _, realType := range realTypes {
-		if _, ok := modelsList[pkgpath+controllerName][realType]; ok {
+		if _, ok := modelsList[realType]; ok {
 			continue
 		}
 		_, mod, newRealTypes := getModel(realType)
-		modelsList[pkgpath+controllerName][realType] = mod
+		modelsList[realType] = mod
 		appendModels(pkgpath, controllerName, newRealTypes)
 	}
 }
