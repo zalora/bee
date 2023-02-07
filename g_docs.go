@@ -213,6 +213,7 @@ func generateDocs(curpath string) {
 		}
 	}
 
+	generateChiDocs(curpath)
 	warnSwaggerError(rootapi)
 
 	os.Mkdir(path.Join(curpath, "swagger"), 0755)
@@ -658,15 +659,20 @@ func parserComments(debug bool, comments *ast.CommentGroup, funcName, controller
 		}
 	}
 	if routerPath != "" {
+		controllerKey := pkgpath + controllerName
+		if controllerName == "" {
+			controllerKey = "CHI"
+		}
+
 		var item *swagger.Item
-		if itemList, ok := controllerList[pkgpath+controllerName]; ok {
+		if itemList, ok := controllerList[controllerKey]; ok {
 			if it, ok := itemList[routerPath]; !ok {
 				item = &swagger.Item{}
 			} else {
 				item = it
 			}
 		} else {
-			controllerList[pkgpath+controllerName] = make(map[string]*swagger.Item)
+			controllerList[controllerKey] = make(map[string]*swagger.Item)
 			item = &swagger.Item{}
 		}
 		switch HTTPMethod {
@@ -685,7 +691,7 @@ func parserComments(debug bool, comments *ast.CommentGroup, funcName, controller
 		case "OPTIONS":
 			item.Options = &opts
 		}
-		controllerList[pkgpath+controllerName][routerPath] = item
+		controllerList[controllerKey][routerPath] = item
 	}
 	return nil
 }
@@ -1293,10 +1299,55 @@ func generateChiDocs(curpath string) {
 		analisyscontrollerPkg(true, localName, im.Path.Value)
 	}
 
-	adi, rizka := json.MarshalIndent(modelsList, "", " ")
-	fmt.Println(string(adi), rizka)
+	apis, ok := controllerList["CHI"]
+	if !ok {
+		return
+	}
 
-	extractRoutes(f, fset)
+	for rt, item := range apis {
+		baseURLSplit := strings.Split(rt, "/")
+		if len(baseURLSplit) <= 0 {
+			continue
+		}
+		tag := baseURLSplit[0]
+
+		if item.Get != nil {
+			item.Get.Tags = append(item.Get.Tags, tag)
+		}
+		if item.Post != nil {
+			item.Post.Tags = append(item.Post.Tags, tag)
+		}
+		if item.Put != nil {
+			item.Put.Tags = append(item.Put.Tags, tag)
+		}
+		if item.Patch != nil {
+			item.Patch.Tags = append(item.Patch.Tags, tag)
+		}
+		if item.Head != nil {
+			item.Head.Tags = append(item.Head.Tags, tag)
+		}
+		if item.Delete != nil {
+			item.Delete.Tags = append(item.Delete.Tags, tag)
+		}
+		if item.Options != nil {
+			item.Options.Tags = append(item.Options.Tags, tag)
+		}
+		if len(rootapi.Paths) == 0 {
+			rootapi.Paths = make(map[string]*swagger.Item)
+		}
+		rt = urlReplace(rt)
+		rootapi.Paths[rt] = item
+	}
+
+	// for _, route := range extractRoutes(f, fset) {
+	// 	route = strings.Replace(route, "/v1", "", 1)
+	// 	route = strings.ReplaceAll(route, "{", ":")
+	// 	route = strings.ReplaceAll(route, "}", "")
+
+	// 	fmt.Println(route)
+	// 	adi, rizka := json.MarshalIndent(controllerList["CHI"][route], "", " ")
+	// 	fmt.Println(string(adi), rizka)
+	// }
 }
 
 func extractRoutes(node *ast.File, fset *token.FileSet) []string {
@@ -1351,9 +1402,7 @@ func extractRoutes(node *ast.File, fset *token.FileSet) []string {
 					continue
 				}
 
-				for _, route := range constructRoutes(innerCallExpr, "", fset) {
-					fmt.Println(route)
-				}
+				routes = append(routes, constructRoutes(innerCallExpr, "", fset)...)
 
 				pos := fset.Position(innerCallExpr.Fun.Pos())
 				fmt.Println(pos.Line, pos, reflect.TypeOf(innerCallExpr.Fun))
