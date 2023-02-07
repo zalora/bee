@@ -126,7 +126,7 @@ func generateDocs(curpath string) {
 		if im.Name != nil {
 			localName = im.Name.Name
 		}
-		analisyscontrollerPkg(localName, im.Path.Value)
+		analisyscontrollerPkg(false, localName, im.Path.Value)
 	}
 
 	for _, decl := range f.Decls {
@@ -298,7 +298,7 @@ func analisysNSInclude(baseurl string, ce *ast.CallExpr) string {
 	return cname
 }
 
-func analisyscontrollerPkg(localName, pkgpath string) {
+func analisyscontrollerPkg(debug bool, localName, pkgpath string) {
 	pkgpath = strings.Trim(pkgpath, "\"")
 	if isSystemPackage(pkgpath) {
 		return
@@ -372,29 +372,43 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 		ColorLog("[ERRO] the %s pkg parser.ParseDir error\n", pkgpath)
 		os.Exit(1)
 	}
+
 	for _, pkg := range astPkgs {
 		for _, fl := range pkg.Files {
 			for _, d := range fl.Decls {
 				switch specDecl := d.(type) {
 				case *ast.FuncDecl:
+					var controllerName string
 					if specDecl.Recv != nil && len(specDecl.Recv.List) > 0 {
-						if t, ok := specDecl.Recv.List[0].Type.(*ast.StarExpr); ok {
-							// parse controller method
-							parserComments(specDecl.Doc, specDecl.Name.String(), fmt.Sprint(t.X), pkgpath)
+						recv := specDecl.Recv.List[0]
+						t, ok := recv.Type.(*ast.StarExpr)
+						if !ok {
+							continue
 						}
+
+						controllerName = fmt.Sprint(t.X)
 					}
+
+					// parse controller method
+					parserComments(debug, specDecl.Doc, specDecl.Name.String(), controllerName, pkgpath)
 				case *ast.GenDecl:
-					if specDecl.Tok == token.TYPE {
-						for _, s := range specDecl.Specs {
-							switch tp := s.(*ast.TypeSpec).Type.(type) {
-							case *ast.StructType:
-								_ = tp.Struct
-								//parse controller definition comments
-								if strings.TrimSpace(specDecl.Doc.Text()) != "" {
-									controllerComments[pkgpath+s.(*ast.TypeSpec).Name.String()] = specDecl.Doc.Text()
-								}
-							}
+					if specDecl.Tok != token.TYPE {
+						continue
+					}
+
+					for _, s := range specDecl.Specs {
+						tp, ok := s.(*ast.TypeSpec).Type.(*ast.StructType)
+						if !ok {
+							continue
 						}
+
+						//parse controller definition comments
+						if strings.TrimSpace(specDecl.Doc.Text()) == "" {
+							continue
+						}
+
+						controllerComments[pkgpath+s.(*ast.TypeSpec).Name.String()] = specDecl.Doc.Text()
+						_ = tp.Struct
 					}
 				}
 			}
@@ -433,7 +447,7 @@ func peekNextSplitString(ss string) (s string, spacePos int) {
 }
 
 // parse the func comments
-func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpath string) error {
+func parserComments(debug bool, comments *ast.CommentGroup, funcName, controllerName, pkgpath string) error {
 	var routerPath string
 	var HTTPMethod string
 	opts := swagger.Operation{
@@ -1265,4 +1279,166 @@ func getPackageName() (string, error) {
 	gopathSRC := os.Getenv("GOPATH") + "/src/"
 
 	return strings.ReplaceAll(pwd, gopathSRC, ""), nil
+}
+
+func generateChiDocs(curpath string) {
+	fset := token.NewFileSet()
+
+	f, err := parser.ParseFile(fset, path.Join(curpath, "pkg", "router", "routes.go"), nil, parser.ParseComments)
+
+	if err != nil {
+		ColorLog("[ERRO] parse router.go error\n")
+		os.Exit(2)
+	}
+
+	for _, im := range f.Imports {
+		localName := ""
+		if im.Name != nil {
+			localName = im.Name.Name
+		}
+		analisyscontrollerPkg(true, localName, im.Path.Value)
+	}
+
+	adi, rizka := json.MarshalIndent(modelsList, "", " ")
+	fmt.Println(string(adi), rizka)
+
+	extractRoutes(f, fset)
+}
+
+func extractRoutes(node *ast.File, fset *token.FileSet) []string {
+	var routes []string
+
+	for _, decl := range node.Decls {
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+
+		if funcDecl.Name.Name != "New" {
+			continue
+		}
+
+		for _, stmt := range funcDecl.Body.List {
+			expr, ok := stmt.(*ast.ExprStmt)
+			if !ok {
+				continue
+			}
+
+			callExpr, ok := expr.X.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+
+			if !assertCallExpression(callExpr, "mux", "Group") {
+				continue
+			}
+
+			if len(callExpr.Args) != 1 {
+				continue
+			}
+
+			funcLit, ok := callExpr.Args[0].(*ast.FuncLit)
+			if !ok {
+				continue
+			}
+
+			for _, innerStmt := range funcLit.Body.List {
+				innerExpr, ok := innerStmt.(*ast.ExprStmt)
+				if !ok {
+					continue
+				}
+
+				innerCallExpr, ok := innerExpr.X.(*ast.CallExpr)
+				if !ok {
+					continue
+				}
+
+				if !assertCallExpression(innerCallExpr, "r", "Route") {
+					continue
+				}
+
+				for _, route := range constructRoutes(innerCallExpr, "", fset) {
+					fmt.Println(route)
+				}
+
+				pos := fset.Position(innerCallExpr.Fun.Pos())
+				fmt.Println(pos.Line, pos, reflect.TypeOf(innerCallExpr.Fun))
+
+				// for _, innerArg := range innerCallExpr.Args {
+				// 	pos := fset.Position(innerArg.Pos())
+				// 	fmt.Println(pos.Line, pos, reflect.TypeOf(innerArg))
+				// }
+
+			}
+		}
+	}
+
+	return routes
+}
+
+func assertCallExpression(callExpr *ast.CallExpr, object, function string) bool {
+	selExpr, ok := callExpr.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+
+	ident, ok := selExpr.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+
+	if ident.Obj == nil {
+		return false
+	}
+
+	if ident.Obj.Name != object {
+		return false
+	}
+
+	if selExpr.Sel.Name != function {
+		return false
+	}
+
+	return true
+}
+
+func constructRoutes(callExpr *ast.CallExpr, route string, fset *token.FileSet) []string {
+	if len(callExpr.Args) != 2 {
+		return nil
+	}
+
+	patternExpr := callExpr.Args[0]
+	fnExpr := callExpr.Args[1]
+
+	patternBasicLit, ok := patternExpr.(*ast.BasicLit)
+	if !ok {
+		return nil
+	}
+
+	pattern := route + strings.Trim(patternBasicLit.Value, `"`)
+
+	fn, ok := fnExpr.(*ast.FuncLit)
+	if !ok {
+		return []string{pattern}
+	}
+
+	var patterns []string
+	for _, stmt := range fn.Body.List {
+		exprStmt, ok := stmt.(*ast.ExprStmt)
+		if !ok {
+			continue
+		}
+
+		callExpr, ok := exprStmt.X.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+
+		subPatterns := constructRoutes(callExpr, pattern, fset)
+		for _, subPattern := range subPatterns {
+			patterns = append(patterns, subPattern)
+		}
+	}
+
+	return patterns
 }
