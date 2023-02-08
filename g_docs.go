@@ -1306,10 +1306,10 @@ func generateChiDocs(curpath string) {
 
 	for rt, item := range apis {
 		baseURLSplit := strings.Split(rt, "/")
-		if len(baseURLSplit) <= 0 {
+		if len(baseURLSplit) <= 1 {
 			continue
 		}
-		tag := baseURLSplit[0]
+		tag := baseURLSplit[1]
 
 		if item.Get != nil {
 			item.Get.Tags = append(item.Get.Tags, tag)
@@ -1339,6 +1339,8 @@ func generateChiDocs(curpath string) {
 		rootapi.Paths[rt] = item
 	}
 
+	rootapi.Tags = append(rootapi.Tags, generateChiTags(f, fset)...)
+
 	// for _, route := range extractRoutes(f, fset) {
 	// 	route = strings.Replace(route, "/v1", "", 1)
 	// 	route = strings.ReplaceAll(route, "{", ":")
@@ -1350,9 +1352,8 @@ func generateChiDocs(curpath string) {
 	// }
 }
 
-func extractRoutes(node *ast.File, fset *token.FileSet) []string {
-	var routes []string
-
+func generateChiTags(node *ast.File, fset *token.FileSet) []swagger.Tag {
+	var lineRouteMap map[int]string
 	for _, decl := range node.Decls {
 		funcDecl, ok := decl.(*ast.FuncDecl)
 		if !ok {
@@ -1402,21 +1403,22 @@ func extractRoutes(node *ast.File, fset *token.FileSet) []string {
 					continue
 				}
 
-				routes = append(routes, constructRoutes(innerCallExpr, "", fset)...)
-
-				pos := fset.Position(innerCallExpr.Fun.Pos())
-				fmt.Println(pos.Line, pos, reflect.TypeOf(innerCallExpr.Fun))
-
-				// for _, innerArg := range innerCallExpr.Args {
-				// 	pos := fset.Position(innerArg.Pos())
-				// 	fmt.Println(pos.Line, pos, reflect.TypeOf(innerArg))
-				// }
-
+				lineRouteMap = extractLineRouteMap(innerCallExpr, fset)
 			}
 		}
 	}
 
-	return routes
+	lineCommentMap := extractLineCommentMap(node.Comments, fset)
+
+	var tags []swagger.Tag
+	for line, route := range lineRouteMap {
+		tags = append(tags, swagger.Tag{
+			Name:        route,
+			Description: lineCommentMap[line-1],
+		})
+	}
+
+	return tags
 }
 
 func assertCallExpression(callExpr *ast.CallExpr, object, function string) bool {
@@ -1445,27 +1447,19 @@ func assertCallExpression(callExpr *ast.CallExpr, object, function string) bool 
 	return true
 }
 
-func constructRoutes(callExpr *ast.CallExpr, route string, fset *token.FileSet) []string {
+func extractLineRouteMap(callExpr *ast.CallExpr, fset *token.FileSet) map[int]string {
 	if len(callExpr.Args) != 2 {
 		return nil
 	}
 
-	patternExpr := callExpr.Args[0]
 	fnExpr := callExpr.Args[1]
 
-	patternBasicLit, ok := patternExpr.(*ast.BasicLit)
+	fn, ok := fnExpr.(*ast.FuncLit)
 	if !ok {
 		return nil
 	}
 
-	pattern := route + strings.Trim(patternBasicLit.Value, `"`)
-
-	fn, ok := fnExpr.(*ast.FuncLit)
-	if !ok {
-		return []string{pattern}
-	}
-
-	var patterns []string
+	lineRouteMap := make(map[int]string)
 	for _, stmt := range fn.Body.List {
 		exprStmt, ok := stmt.(*ast.ExprStmt)
 		if !ok {
@@ -1477,11 +1471,44 @@ func constructRoutes(callExpr *ast.CallExpr, route string, fset *token.FileSet) 
 			continue
 		}
 
-		subPatterns := constructRoutes(callExpr, pattern, fset)
-		for _, subPattern := range subPatterns {
-			patterns = append(patterns, subPattern)
+		if len(callExpr.Args) != 2 {
+			return nil
+		}
+
+		patternExpr := callExpr.Args[0]
+
+		patternBasicLit, ok := patternExpr.(*ast.BasicLit)
+		if !ok {
+			return nil
+		}
+
+		pattern := strings.Trim(patternBasicLit.Value, `"/`)
+
+		selectorExpr, ok := callExpr.Fun.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+
+		if selectorExpr.Sel.Name != "Route" {
+			continue
+		}
+
+		// fmt.Println(pos.Line, pos, reflect.TypeOf(selectorExpr.X), pattern)
+
+		pos := fset.Position(selectorExpr.Pos())
+		lineRouteMap[pos.Line] = pattern
+	}
+
+	return lineRouteMap
+}
+
+func extractLineCommentMap(comments []*ast.CommentGroup, fset *token.FileSet) map[int]string {
+	lineCommentMap := make(map[int]string)
+	for _, cg := range comments {
+		for _, c := range cg.List {
+			lineCommentMap[fset.Position(c.Pos()).Line] = strings.TrimLeft(c.Text, "/ ")
 		}
 	}
 
-	return patterns
+	return lineCommentMap
 }
