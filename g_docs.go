@@ -1268,8 +1268,6 @@ func generateChiDocs(curpath string) error {
 		return nil
 	}
 
-	// fmt.Println(controllerList["github.com/zalora/doraemon/pkg/api/cmsHandler"])
-
 	for rt, item := range apis {
 		baseURLSplit := strings.Split(rt, "/")
 		if len(baseURLSplit) <= 1 {
@@ -1317,48 +1315,18 @@ func generateChiTags(node *ast.File, fset *token.FileSet) []swagger.Tag {
 			continue
 		}
 
-		for _, stmt := range funcDecl.Body.List {
-			expr, ok := stmt.(*ast.ExprStmt)
-			if !ok {
-				continue
-			}
-
-			callExpr, ok := expr.X.(*ast.CallExpr)
-			if !ok {
-				continue
-			}
-
-			if !assertCallExpression(callExpr, "mux", "Group") {
-				continue
-			}
-
-			if len(callExpr.Args) != 1 {
-				continue
-			}
-
-			funcLit, ok := callExpr.Args[0].(*ast.FuncLit)
-			if !ok {
-				continue
-			}
-
-			for _, innerStmt := range funcLit.Body.List {
-				innerExpr, ok := innerStmt.(*ast.ExprStmt)
-				if !ok {
-					continue
-				}
-
-				innerCallExpr, ok := innerExpr.X.(*ast.CallExpr)
-				if !ok {
-					continue
-				}
-
-				if !assertCallExpression(innerCallExpr, "r", "Route") {
-					continue
-				}
-
-				lineRouteMap = extractLineRouteMap(innerCallExpr, fset)
-			}
+		funcLit, err := findMuxGroupArg(funcDecl, fset)
+		if err != nil {
+			continue
 		}
+
+		route, err := findRouteCall(funcLit, fset)
+		if err != nil {
+			continue
+		}
+
+		lineRouteMap = extractLineRouteMap(route, fset)
+		break
 	}
 
 	lineCommentMap := extractLineCommentMap(node.Comments, fset)
@@ -1446,13 +1414,66 @@ func extractLineRouteMap(callExpr *ast.CallExpr, fset *token.FileSet) map[int]st
 			continue
 		}
 
-		// fmt.Println(pos.Line, pos, reflect.TypeOf(selectorExpr.X), pattern)
-
 		pos := fset.Position(selectorExpr.Pos())
 		lineRouteMap[pos.Line] = pattern
 	}
 
 	return lineRouteMap
+}
+
+func findMuxGroupArg(funcDecl *ast.FuncDecl, fset *token.FileSet) (*ast.FuncLit, error) {
+	for _, stmt := range funcDecl.Body.List {
+		expr, ok := stmt.(*ast.ExprStmt)
+		if !ok {
+			continue
+		}
+
+		callExpr, ok := expr.X.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+
+		// mux.Group(func(r chi.Router) { ... }
+		if !assertCallExpression(callExpr, "mux", "Group") {
+			continue
+		}
+
+		if len(callExpr.Args) != 1 {
+			continue
+		}
+
+		funcLit, ok := callExpr.Args[0].(*ast.FuncLit)
+		if !ok {
+			continue
+		}
+
+		return funcLit, nil
+	}
+
+	return nil, errors.New("mux group arg is not found")
+}
+
+func findRouteCall(funcLit *ast.FuncLit, fset *token.FileSet) (*ast.CallExpr, error) {
+	for _, stmt := range funcLit.Body.List {
+		expr, ok := stmt.(*ast.ExprStmt)
+		if !ok {
+			continue
+		}
+
+		callExpr, ok := expr.X.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+
+		// r.Route("v1", func(r chi.Router) { ... })
+		if !assertCallExpression(callExpr, "r", "Route") {
+			continue
+		}
+
+		return callExpr, nil
+	}
+
+	return nil, errors.New("no route is found")
 }
 
 func extractLineCommentMap(comments []*ast.CommentGroup, fset *token.FileSet) map[int]string {
