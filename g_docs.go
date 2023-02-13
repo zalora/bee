@@ -126,94 +126,69 @@ func generateDocs(curpath string) {
 		if im.Name != nil {
 			localName = im.Name.Name
 		}
-		analisyscontrollerPkg(false, localName, im.Path.Value)
+		analisyscontrollerPkg(localName, im.Path.Value)
 	}
 
-	for _, decl := range f.Decls {
-		funcDecl, isFuncDecl := decl.(*ast.FuncDecl)
-		if !isFuncDecl {
-			continue
-		}
-
-		for _, stmt := range funcDecl.Body.List {
-			assignStmt, isAssignStmt := stmt.(*ast.AssignStmt)
-			if !isAssignStmt {
-				continue
-			}
-
-			for _, rhs := range assignStmt.Rhs {
-				callExpr, isCallExpr := rhs.(*ast.CallExpr)
-				if !isCallExpr {
-					continue
-				}
-
-				selExpr, isSelectorExpr := callExpr.Fun.(*ast.SelectorExpr)
-				if !isSelectorExpr {
-					continue
-				}
-
-				if selExpr.Sel.String() != "NewNamespace" {
-					continue
-				}
-
-				version, params := analisysNewNamespace(callExpr)
-				if rootapi.BasePath == "" && version != "" {
-					rootapi.BasePath = version
-				}
-
-				for _, param := range params {
-					innerCallExpr, isInnerCallExpr := param.(*ast.CallExpr)
-					if !isInnerCallExpr {
-						continue
-					}
-
-					innerSelExpr, isInnerSelectorExpr := innerCallExpr.Fun.(*ast.SelectorExpr)
-					if !isInnerSelectorExpr {
-						continue
-					}
-
-					if innerSelExpr.Sel.String() == "NSNamespace" {
-						s, innerParams := analisysNewNamespace(innerCallExpr)
-						for _, innerParam := range innerParams {
-							innerInnerCallExpr, isInnerInnerCallExpr := innerParam.(*ast.CallExpr)
-							if !isInnerInnerCallExpr {
+	for _, d := range f.Decls {
+		switch specDecl := d.(type) {
+		case *ast.FuncDecl:
+			for _, l := range specDecl.Body.List {
+				switch stmt := l.(type) {
+				case *ast.AssignStmt:
+					for _, l := range stmt.Rhs {
+						if v, ok := l.(*ast.CallExpr); ok {
+							// analisys NewNamespace, it will return version and the subfunction
+							if selName := v.Fun.(*ast.SelectorExpr).Sel.String(); selName != "NewNamespace" {
 								continue
 							}
-
-							innerInnerSelExpr, isInnerInnerSelectorExpr := innerInnerCallExpr.Fun.(*ast.SelectorExpr)
-							if !isInnerInnerSelectorExpr {
-								continue
+							version, params := analisysNewNamespace(v)
+							if rootapi.BasePath == "" && version != "" {
+								rootapi.BasePath = version
 							}
-
-							if innerInnerSelExpr.Sel.String() == "NSInclude" {
-								controllerName := analisysNSInclude(s, innerInnerCallExpr)
-								if v, ok := controllerComments[controllerName]; ok {
-									rootapi.Tags = append(rootapi.Tags, swagger.Tag{
-										Name:        strings.Trim(s, "/"),
-										Description: v,
-									})
+							for _, p := range params {
+								switch pp := p.(type) {
+								case *ast.CallExpr:
+									controllerName := ""
+									if selname := pp.Fun.(*ast.SelectorExpr).Sel.String(); selname == "NSNamespace" {
+										s, params := analisysNewNamespace(pp)
+										for _, sp := range params {
+											switch pp := sp.(type) {
+											case *ast.CallExpr:
+												if pp.Fun.(*ast.SelectorExpr).Sel.String() == "NSInclude" {
+													controllerName = analisysNSInclude(s, pp)
+													if v, ok := controllerComments[controllerName]; ok {
+														rootapi.Tags = append(rootapi.Tags, swagger.Tag{
+															Name:        strings.Trim(s, "/"),
+															Description: v,
+														})
+													}
+												}
+											}
+										}
+									} else if selname == "NSInclude" {
+										controllerName = analisysNSInclude("", pp)
+										if v, ok := controllerComments[controllerName]; ok {
+											rootapi.Tags = append(rootapi.Tags, swagger.Tag{
+												Name:        controllerName, // if the NSInclude has no prefix, we use the controllername as the tag
+												Description: v,
+											})
+										}
+									}
 								}
-								continue
 							}
 						}
-					}
 
-					if innerSelExpr.Sel.String() == "NSInclude" {
-						controllerName := analisysNSInclude("", innerCallExpr)
-						if v, ok := controllerComments[controllerName]; ok {
-							rootapi.Tags = append(rootapi.Tags, swagger.Tag{
-								Name:        controllerName, // if the NSInclude has no prefix, we use the controllername as the tag
-								Description: v,
-							})
-						}
 					}
 				}
-
 			}
 		}
 	}
 
-	generateChiDocs(curpath)
+	err = generateChiDocs(curpath)
+	if err != nil {
+		panic(err)
+	}
+
 	warnSwaggerError(rootapi)
 
 	os.Mkdir(path.Join(curpath, "swagger"), 0755)
@@ -299,7 +274,7 @@ func analisysNSInclude(baseurl string, ce *ast.CallExpr) string {
 	return cname
 }
 
-func analisyscontrollerPkg(debug bool, localName, pkgpath string) {
+func analisyscontrollerPkg(localName, pkgpath string) {
 	pkgpath = strings.Trim(pkgpath, "\"")
 	if isSystemPackage(pkgpath) {
 		return
@@ -379,37 +354,24 @@ func analisyscontrollerPkg(debug bool, localName, pkgpath string) {
 			for _, d := range fl.Decls {
 				switch specDecl := d.(type) {
 				case *ast.FuncDecl:
-					var controllerName string
 					if specDecl.Recv != nil && len(specDecl.Recv.List) > 0 {
-						recv := specDecl.Recv.List[0]
-						t, ok := recv.Type.(*ast.StarExpr)
-						if !ok {
-							continue
+						if t, ok := specDecl.Recv.List[0].Type.(*ast.StarExpr); ok {
+							// parse controller method
+							parserComments(specDecl.Doc, specDecl.Name.String(), fmt.Sprint(t.X), pkgpath)
 						}
-
-						controllerName = fmt.Sprint(t.X)
 					}
-
-					// parse controller method
-					parserComments(debug, specDecl.Doc, specDecl.Name.String(), controllerName, pkgpath)
 				case *ast.GenDecl:
-					if specDecl.Tok != token.TYPE {
-						continue
-					}
-
-					for _, s := range specDecl.Specs {
-						tp, ok := s.(*ast.TypeSpec).Type.(*ast.StructType)
-						if !ok {
-							continue
+					if specDecl.Tok == token.TYPE {
+						for _, s := range specDecl.Specs {
+							switch tp := s.(*ast.TypeSpec).Type.(type) {
+							case *ast.StructType:
+								_ = tp.Struct
+								//parse controller definition comments
+								if strings.TrimSpace(specDecl.Doc.Text()) != "" {
+									controllerComments[pkgpath+s.(*ast.TypeSpec).Name.String()] = specDecl.Doc.Text()
+								}
+							}
 						}
-
-						//parse controller definition comments
-						if strings.TrimSpace(specDecl.Doc.Text()) == "" {
-							continue
-						}
-
-						controllerComments[pkgpath+s.(*ast.TypeSpec).Name.String()] = specDecl.Doc.Text()
-						_ = tp.Struct
 					}
 				}
 			}
@@ -448,7 +410,7 @@ func peekNextSplitString(ss string) (s string, spacePos int) {
 }
 
 // parse the func comments
-func parserComments(debug bool, comments *ast.CommentGroup, funcName, controllerName, pkgpath string) error {
+func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpath string) error {
 	var routerPath string
 	var HTTPMethod string
 	opts := swagger.Operation{
@@ -660,21 +622,21 @@ func parserComments(debug bool, comments *ast.CommentGroup, funcName, controller
 	}
 	if routerPath != "" {
 		controllerKey := pkgpath + controllerName
-		if controllerName == "" {
+		if controllerName == "" || !strings.HasSuffix(controllerName, "Controller") {
 			controllerKey = "CHI"
 		}
 
-		var item *swagger.Item
-		if itemList, ok := controllerList[controllerKey]; ok {
-			if it, ok := itemList[routerPath]; !ok {
-				item = &swagger.Item{}
-			} else {
-				item = it
-			}
-		} else {
+		itemList, ok := controllerList[controllerKey]
+		if !ok {
 			controllerList[controllerKey] = make(map[string]*swagger.Item)
+		}
+
+		var item *swagger.Item
+		item, ok = itemList[routerPath]
+		if !ok {
 			item = &swagger.Item{}
 		}
+
 		switch HTTPMethod {
 		case "GET":
 			item.Get = &opts
@@ -1281,28 +1243,32 @@ func getPackageName() (string, error) {
 	return strings.ReplaceAll(pwd, gopathSRC, ""), nil
 }
 
-func generateChiDocs(curpath string) {
+func generateChiDocs(curpath string) error {
 	fset := token.NewFileSet()
-
-	f, err := parser.ParseFile(fset, path.Join(curpath, "pkg", "router", "routes.go"), nil, parser.ParseComments)
-
+	f, err := parser.ParseFile(
+		fset,
+		path.Join(curpath, "pkg", "router", "routes.go"),
+		nil,
+		parser.ParseComments)
 	if err != nil {
-		ColorLog("[ERRO] parse router.go error\n")
-		os.Exit(2)
+		return err
 	}
 
 	for _, im := range f.Imports {
-		localName := ""
+		var localName string
 		if im.Name != nil {
 			localName = im.Name.Name
 		}
-		analisyscontrollerPkg(true, localName, im.Path.Value)
+
+		analisyscontrollerPkg(localName, im.Path.Value)
 	}
 
 	apis, ok := controllerList["CHI"]
 	if !ok {
-		return
+		return nil
 	}
+
+	// fmt.Println(controllerList["github.com/zalora/doraemon/pkg/api/cmsHandler"])
 
 	for rt, item := range apis {
 		baseURLSplit := strings.Split(rt, "/")
@@ -1311,27 +1277,14 @@ func generateChiDocs(curpath string) {
 		}
 		tag := baseURLSplit[1]
 
-		if item.Get != nil {
-			item.Get.Tags = append(item.Get.Tags, tag)
-		}
-		if item.Post != nil {
-			item.Post.Tags = append(item.Post.Tags, tag)
-		}
-		if item.Put != nil {
-			item.Put.Tags = append(item.Put.Tags, tag)
-		}
-		if item.Patch != nil {
-			item.Patch.Tags = append(item.Patch.Tags, tag)
-		}
-		if item.Head != nil {
-			item.Head.Tags = append(item.Head.Tags, tag)
-		}
-		if item.Delete != nil {
-			item.Delete.Tags = append(item.Delete.Tags, tag)
-		}
-		if item.Options != nil {
-			item.Options.Tags = append(item.Options.Tags, tag)
-		}
+		appendTag(item.Get, tag)
+		appendTag(item.Post, tag)
+		appendTag(item.Put, tag)
+		appendTag(item.Patch, tag)
+		appendTag(item.Head, tag)
+		appendTag(item.Delete, tag)
+		appendTag(item.Options, tag)
+
 		if len(rootapi.Paths) == 0 {
 			rootapi.Paths = make(map[string]*swagger.Item)
 		}
@@ -1341,15 +1294,15 @@ func generateChiDocs(curpath string) {
 
 	rootapi.Tags = append(rootapi.Tags, generateChiTags(f, fset)...)
 
-	// for _, route := range extractRoutes(f, fset) {
-	// 	route = strings.Replace(route, "/v1", "", 1)
-	// 	route = strings.ReplaceAll(route, "{", ":")
-	// 	route = strings.ReplaceAll(route, "}", "")
+	return nil
+}
 
-	// 	fmt.Println(route)
-	// 	adi, rizka := json.MarshalIndent(controllerList["CHI"][route], "", " ")
-	// 	fmt.Println(string(adi), rizka)
-	// }
+func appendTag(op *swagger.Operation, tag string) {
+	if op == nil {
+		return
+	}
+
+	op.Tags = append(op.Tags, tag)
 }
 
 func generateChiTags(node *ast.File, fset *token.FileSet) []swagger.Tag {
