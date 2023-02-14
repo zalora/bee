@@ -21,6 +21,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -59,6 +60,7 @@ var importlist map[string]string
 var controllerList map[string]map[string]*swagger.Item //controllername Paths items
 var modelsList map[string]swagger.Schema
 var rootapi swagger.Swagger
+var chiAPIs map[string]*swagger.Item
 
 func init() {
 	pkgCache = make(map[string]struct{})
@@ -66,6 +68,7 @@ func init() {
 	importlist = make(map[string]string)
 	controllerList = make(map[string]map[string]*swagger.Item)
 	modelsList = make(map[string]swagger.Schema)
+	chiAPIs = make(map[string]*swagger.Item)
 }
 
 func generateDocs(curpath string) {
@@ -354,24 +357,38 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 			for _, d := range fl.Decls {
 				switch specDecl := d.(type) {
 				case *ast.FuncDecl:
+					// ControllerName can be empty for CHI.
+					var controllerName string
 					if specDecl.Recv != nil && len(specDecl.Recv.List) > 0 {
-						if t, ok := specDecl.Recv.List[0].Type.(*ast.StarExpr); ok {
-							// parse controller method
-							parserComments(specDecl.Doc, specDecl.Name.String(), fmt.Sprint(t.X), pkgpath)
+						recv := specDecl.Recv.List[0]
+						t, ok := recv.Type.(*ast.StarExpr)
+						if !ok {
+							continue
 						}
+
+						controllerName = fmt.Sprint(t.X)
 					}
+
+					// parse controller method
+					parserComments(specDecl.Doc, specDecl.Name.String(), controllerName, pkgpath)
 				case *ast.GenDecl:
-					if specDecl.Tok == token.TYPE {
-						for _, s := range specDecl.Specs {
-							switch tp := s.(*ast.TypeSpec).Type.(type) {
-							case *ast.StructType:
-								_ = tp.Struct
-								//parse controller definition comments
-								if strings.TrimSpace(specDecl.Doc.Text()) != "" {
-									controllerComments[pkgpath+s.(*ast.TypeSpec).Name.String()] = specDecl.Doc.Text()
-								}
-							}
+					if specDecl.Tok != token.TYPE {
+						continue
+					}
+
+					for _, s := range specDecl.Specs {
+						tp, ok := s.(*ast.TypeSpec).Type.(*ast.StructType)
+						if !ok {
+							continue
 						}
+
+						//parse controller definition comments
+						if strings.TrimSpace(specDecl.Doc.Text()) == "" {
+							continue
+						}
+
+						controllerComments[pkgpath+s.(*ast.TypeSpec).Name.String()] = specDecl.Doc.Text()
+						_ = tp.Struct
 					}
 				}
 			}
@@ -620,42 +637,69 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 			}
 		}
 	}
-	if routerPath != "" {
-		controllerKey := pkgpath + controllerName
-		if controllerName == "" || !strings.HasSuffix(controllerName, "Controller") {
-			controllerKey = "CHI"
-		}
 
-		itemList, ok := controllerList[controllerKey]
-		if !ok {
-			controllerList[controllerKey] = make(map[string]*swagger.Item)
-		}
+	if routerPath == "" {
+		return nil
+	}
 
-		var item *swagger.Item
-		item, ok = itemList[routerPath]
+	if isCHI(controllerName) {
+		item, ok := chiAPIs[routerPath]
 		if !ok {
 			item = &swagger.Item{}
 		}
 
-		switch HTTPMethod {
-		case "GET":
-			item.Get = &opts
-		case "POST":
-			item.Post = &opts
-		case "PUT":
-			item.Put = &opts
-		case "PATCH":
-			item.Patch = &opts
-		case "DELETE":
-			item.Delete = &opts
-		case "HEAD":
-			item.Head = &opts
-		case "OPTIONS":
-			item.Options = &opts
-		}
-		controllerList[controllerKey][routerPath] = item
+		item = enrichSwaggerItem(item, opts, HTTPMethod)
+		chiAPIs[routerPath] = item
+		return nil
 	}
+
+	controllerKey := pkgpath + controllerName
+	itemList, ok := controllerList[controllerKey]
+	if !ok {
+		controllerList[controllerKey] = make(map[string]*swagger.Item)
+	}
+
+	item, ok := itemList[routerPath]
+	if !ok {
+		item = &swagger.Item{}
+	}
+
+	item = enrichSwaggerItem(item, opts, HTTPMethod)
+	controllerList[controllerKey][routerPath] = item
 	return nil
+}
+
+func isCHI(controllerName string) bool {
+	if controllerName == "" {
+		return true
+	}
+
+	if !strings.HasSuffix(controllerName, "Controller") {
+		return true
+	}
+
+	return false
+}
+
+func enrichSwaggerItem(item *swagger.Item, opts swagger.Operation, httpMethod string) *swagger.Item {
+	switch httpMethod {
+	case http.MethodGet:
+		item.Get = &opts
+	case http.MethodPost:
+		item.Post = &opts
+	case http.MethodPut:
+		item.Put = &opts
+	case http.MethodPatch:
+		item.Patch = &opts
+	case http.MethodDelete:
+		item.Delete = &opts
+	case http.MethodHead:
+		item.Head = &opts
+	case http.MethodOptions:
+		item.Options = &opts
+	}
+
+	return item
 }
 
 // analisys params return []string
@@ -1263,12 +1307,7 @@ func generateChiDocs(curpath string) error {
 		analisyscontrollerPkg(localName, im.Path.Value)
 	}
 
-	apis, ok := controllerList["CHI"]
-	if !ok {
-		return nil
-	}
-
-	for rt, item := range apis {
+	for rt, item := range chiAPIs {
 		baseURLSplit := strings.Split(rt, "/")
 		if len(baseURLSplit) <= 1 {
 			continue
