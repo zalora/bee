@@ -189,7 +189,7 @@ func generateDocs(curpath string) {
 
 	err = generateChiDocs(curpath)
 	if err != nil {
-		panic(err)
+		ColorLog("[WARN] Chi docs is not generated: %v\n", err)
 	}
 
 	warnSwaggerError(rootapi)
