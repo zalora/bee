@@ -21,6 +21,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -413,7 +414,7 @@ func peekNextSplitString(ss string) (s string, spacePos int) {
 // parse the func comments
 func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpath string) error {
 	var routerPath string
-	var HTTPMethod string
+	var httpMethod string
 	opts := swagger.Operation{
 		Responses: make(map[string]swagger.Response),
 	}
@@ -429,9 +430,9 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 				routerPath = e1[0]
 				if len(e1) == 2 && e1[1] != "" {
 					e1 = strings.SplitN(e1[1], " ", 2)
-					HTTPMethod = strings.ToUpper(strings.Trim(e1[0], "[]"))
+					httpMethod = strings.ToUpper(strings.Trim(e1[0], "[]"))
 				} else {
-					HTTPMethod = "GET"
+					httpMethod = "GET"
 				}
 			} else if strings.HasPrefix(t, "@Title") {
 				opts.OperationID = controllerName + "." + strings.TrimSpace(t[len("@Title"):])
@@ -627,37 +628,46 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 			}
 		}
 	}
-	if routerPath != "" {
-		var item *swagger.Item
-		if itemList, ok := controllerList[pkgpath+controllerName]; ok {
-			if it, ok := itemList[routerPath]; !ok {
-				item = &swagger.Item{}
-			} else {
-				item = it
-			}
-		} else {
-			controllerList[pkgpath+controllerName] = make(map[string]*swagger.Item)
-			item = &swagger.Item{}
-		}
-		switch HTTPMethod {
-		case "GET":
-			item.Get = &opts
-		case "POST":
-			item.Post = &opts
-		case "PUT":
-			item.Put = &opts
-		case "PATCH":
-			item.Patch = &opts
-		case "DELETE":
-			item.Delete = &opts
-		case "HEAD":
-			item.Head = &opts
-		case "OPTIONS":
-			item.Options = &opts
-		}
-		controllerList[pkgpath+controllerName][routerPath] = item
+	if routerPath == "" {
+		return nil
 	}
+
+	controllerKey := pkgpath + controllerName
+	itemList, ok := controllerList[controllerKey]
+	if !ok {
+		controllerList[controllerKey] = make(map[string]*swagger.Item)
+	}
+
+	item, ok := itemList[routerPath]
+	if !ok {
+		item = &swagger.Item{}
+	}
+
+	enrichSwaggerItem(item, opts, httpMethod)
+	controllerList[pkgpath+controllerName][routerPath] = item
+
 	return nil
+}
+
+func enrichSwaggerItem(item *swagger.Item, opts swagger.Operation, httpMethod string) *swagger.Item {
+	switch httpMethod {
+	case http.MethodGet:
+		item.Get = &opts
+	case http.MethodPost:
+		item.Post = &opts
+	case http.MethodPut:
+		item.Put = &opts
+	case http.MethodPatch:
+		item.Patch = &opts
+	case http.MethodDelete:
+		item.Delete = &opts
+	case http.MethodHead:
+		item.Head = &opts
+	case http.MethodOptions:
+		item.Options = &opts
+	}
+
+	return item
 }
 
 // analisys params return []string
