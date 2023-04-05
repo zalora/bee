@@ -635,7 +635,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 	return nil
 }
 
-func enrichSwaggerItem(item *swagger.Item, opts swagger.Operation, httpMethod string) *swagger.Item {
+func enrichSwaggerItem(item *swagger.Item, opts swagger.Operation, httpMethod string) {
 	switch httpMethod {
 	case http.MethodGet:
 		item.Get = &opts
@@ -652,8 +652,6 @@ func enrichSwaggerItem(item *swagger.Item, opts swagger.Operation, httpMethod st
 	case http.MethodOptions:
 		item.Options = &opts
 	}
-
-	return item
 }
 
 // analisys params return []string
