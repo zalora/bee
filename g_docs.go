@@ -348,12 +348,20 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 			for _, d := range fl.Decls {
 				switch specDecl := d.(type) {
 				case *ast.FuncDecl:
+					// ControllerName can be empty for CHI.
+					var controllerName string
 					if specDecl.Recv != nil && len(specDecl.Recv.List) > 0 {
-						if t, ok := specDecl.Recv.List[0].Type.(*ast.StarExpr); ok {
-							// parse controller method
-							parserComments(specDecl.Doc, specDecl.Name.String(), fmt.Sprint(t.X), pkgpath)
+						recv := specDecl.Recv.List[0]
+						t, ok := recv.Type.(*ast.StarExpr)
+						if !ok {
+							continue
 						}
+
+						controllerName = fmt.Sprint(t.X)
 					}
+
+					// parse controller method
+					parserComments(specDecl.Doc, specDecl.Name.String(), controllerName, pkgpath)
 				case *ast.GenDecl:
 					if specDecl.Tok == token.TYPE {
 						for _, s := range specDecl.Specs {
