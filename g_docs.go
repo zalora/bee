@@ -629,7 +629,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 		return nil
 	}
 
-	if isCHI(controllerName) {
+	if isCHI(pkgpath) {
 		item, ok := chiAPIs[routerPath]
 		if !ok {
 			item = &swagger.Item{}

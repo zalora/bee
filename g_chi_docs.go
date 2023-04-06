@@ -2,14 +2,10 @@ package main
 
 import "strings"
 
-func isCHI(controllerName string) bool {
-	if controllerName == "" {
-		return true
-	}
+const (
+	handlerPrefixCHI = "github.com/zalora/doraemon/handlers"
+)
 
-	if !strings.HasSuffix(controllerName, "Controller") {
-		return true
-	}
-
-	return false
+func isCHI(pkgpath string) bool {
+	return strings.HasPrefix(pkgpath, handlerPrefixCHI)
 }
