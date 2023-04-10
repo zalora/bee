@@ -635,7 +635,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 			item = &swagger.Item{}
 		}
 
-		item = enrichSwaggerItem(item, opts, httpMethod)
+		enrichSwaggerItem(item, opts, httpMethod)
 		chiAPIs[routerPath] = item
 		return nil
 	}
