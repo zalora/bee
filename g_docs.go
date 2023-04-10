@@ -187,6 +187,11 @@ func generateDocs(curpath string) {
 		}
 	}
 
+	err = generateChiDocs(curpath)
+	if err != nil {
+		ColorLog("[WARN] Chi docs is not generated: %v\n", err)
+	}
+
 	warnSwaggerError(rootapi)
 
 	os.Mkdir(path.Join(curpath, "swagger"), 0755)
