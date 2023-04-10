@@ -429,7 +429,7 @@ func peekNextSplitString(ss string) (s string, spacePos int) {
 // parse the func comments
 func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpath string) error {
 	var routerPath string
-	var HTTPMethod string
+	var httpMethod string
 	opts := swagger.Operation{
 		Responses: make(map[string]swagger.Response),
 	}
@@ -445,9 +445,9 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 				routerPath = e1[0]
 				if len(e1) == 2 && e1[1] != "" {
 					e1 = strings.SplitN(e1[1], " ", 2)
-					HTTPMethod = strings.ToUpper(strings.Trim(e1[0], "[]"))
+					httpMethod = strings.ToUpper(strings.Trim(e1[0], "[]"))
 				} else {
-					HTTPMethod = "GET"
+					httpMethod = "GET"
 				}
 			} else if strings.HasPrefix(t, "@Title") {
 				opts.OperationID = controllerName + "." + strings.TrimSpace(t[len("@Title"):])
@@ -648,7 +648,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 			item = &swagger.Item{}
 		}
 
-		item = enrichSwaggerItem(item, opts, HTTPMethod)
+		enrichSwaggerItem(item, opts, httpMethod)
 		chiAPIs[routerPath] = item
 		return nil
 	}
@@ -664,12 +664,12 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 		item = &swagger.Item{}
 	}
 
-	item = enrichSwaggerItem(item, opts, HTTPMethod)
+	enrichSwaggerItem(item, opts, httpMethod)
 	controllerList[controllerKey][routerPath] = item
 	return nil
 }
 
-func enrichSwaggerItem(item *swagger.Item, opts swagger.Operation, httpMethod string) *swagger.Item {
+func enrichSwaggerItem(item *swagger.Item, opts swagger.Operation, httpMethod string) {
 	switch httpMethod {
 	case http.MethodGet:
 		item.Get = &opts
@@ -686,8 +686,6 @@ func enrichSwaggerItem(item *swagger.Item, opts swagger.Operation, httpMethod st
 	case http.MethodOptions:
 		item.Options = &opts
 	}
-
-	return item
 }
 
 // analisys params return []string
