@@ -13,6 +13,8 @@ import (
 
 const (
 	basePath = "/v1"
+
+	handlerPrefixCHI = "github.com/zalora/doraemon/handlers"
 )
 
 var (
@@ -339,14 +341,6 @@ func extractLineCommentMap(comments []*ast.CommentGroup, fset *token.FileSet) ma
 	return lineCommentMap
 }
 
-func isCHI(controllerName string) bool {
-	if controllerName == "" {
-		return true
-	}
-
-	if !strings.HasSuffix(controllerName, "Controller") {
-		return true
-	}
-
-	return false
+func isCHI(pkgpath string) bool {
+	return strings.HasPrefix(pkgpath, handlerPrefixCHI)
 }
