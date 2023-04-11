@@ -60,6 +60,7 @@ var importlist map[string]string
 var controllerList map[string]map[string]*swagger.Item //controllername Paths items
 var modelsList map[string]swagger.Schema
 var rootapi swagger.Swagger
+var chiAPIs map[string]*swagger.Item
 
 func init() {
 	pkgCache = make(map[string]struct{})
@@ -67,6 +68,7 @@ func init() {
 	importlist = make(map[string]string)
 	controllerList = make(map[string]map[string]*swagger.Item)
 	modelsList = make(map[string]swagger.Schema)
+	chiAPIs = make(map[string]*swagger.Item)
 }
 
 func generateDocs(curpath string) {
@@ -129,6 +131,7 @@ func generateDocs(curpath string) {
 		}
 		analisyscontrollerPkg(localName, im.Path.Value)
 	}
+
 	for _, d := range f.Decls {
 		switch specDecl := d.(type) {
 		case *ast.FuncDecl:
@@ -623,6 +626,17 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 		}
 	}
 	if routerPath == "" {
+		return nil
+	}
+
+	if isCHI(pkgpath) {
+		item, ok := chiAPIs[routerPath]
+		if !ok {
+			item = &swagger.Item{}
+		}
+
+		enrichSwaggerItem(item, opts, httpMethod)
+		chiAPIs[routerPath] = item
 		return nil
 	}
 
