@@ -14,6 +14,7 @@ import (
 const (
 	basePath = "/v1"
 
+	chiPath          = "pkg/router/routes.go"
 	handlerPrefixCHI = "github.com/zalora/doraemon/handlers"
 )
 
@@ -28,7 +29,7 @@ func generateChiDocs(curpath string) error {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(
 		fset,
-		path.Join(curpath, "pkg", "router", "routes.go"),
+		path.Join(curpath, chiPath),
 		nil,
 		parser.ParseComments)
 	if err != nil {
@@ -68,6 +69,7 @@ func generateChiDocs(curpath string) error {
 		if len(rootapi.Paths) == 0 {
 			rootapi.Paths = make(map[string]*swagger.Item)
 		}
+
 		rt = urlReplace(rt)
 		rootapi.Paths[rt] = item
 	}
