@@ -57,7 +57,7 @@ ______
 | |_/ /|  __/|  __/
 \____/  \___| \___| v1.5.0
 
-├── Beego     : 1.10.0
+├── Beego     : 1.11.0
 ├── GoVersion : go1.6.2
 ├── GOOS      : windows
 ├── GOARCH    : amd64
