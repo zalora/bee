@@ -351,6 +351,7 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 		ColorLog("[ERRO] the %s pkg parser.ParseDir error\n", pkgpath)
 		os.Exit(1)
 	}
+
 	for _, pkg := range astPkgs {
 		for _, fl := range pkg.Files {
 			for _, d := range fl.Decls {
@@ -371,17 +372,23 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 					// parse controller method
 					parserComments(specDecl.Doc, specDecl.Name.String(), controllerName, pkgpath)
 				case *ast.GenDecl:
-					if specDecl.Tok == token.TYPE {
-						for _, s := range specDecl.Specs {
-							switch tp := s.(*ast.TypeSpec).Type.(type) {
-							case *ast.StructType:
-								_ = tp.Struct
-								//parse controller definition comments
-								if strings.TrimSpace(specDecl.Doc.Text()) != "" {
-									controllerComments[pkgpath+s.(*ast.TypeSpec).Name.String()] = specDecl.Doc.Text()
-								}
-							}
+					if specDecl.Tok != token.TYPE {
+						continue
+					}
+
+					for _, s := range specDecl.Specs {
+						tp, ok := s.(*ast.TypeSpec).Type.(*ast.StructType)
+						if !ok {
+							continue
 						}
+
+						//parse controller definition comments
+						if strings.TrimSpace(specDecl.Doc.Text()) == "" {
+							continue
+						}
+
+						controllerComments[pkgpath+s.(*ast.TypeSpec).Name.String()] = specDecl.Doc.Text()
+						_ = tp.Struct
 					}
 				}
 			}
@@ -630,6 +637,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 			}
 		}
 	}
+
 	if routerPath == "" {
 		return nil
 	}
@@ -657,8 +665,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 	}
 
 	enrichSwaggerItem(item, opts, httpMethod)
-	controllerList[pkgpath+controllerName][routerPath] = item
-
+	controllerList[controllerKey][routerPath] = item
 	return nil
 }
 
