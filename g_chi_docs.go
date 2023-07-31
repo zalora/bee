@@ -13,7 +13,7 @@ import (
 
 const (
 	chiPath          = "pkg/router/routes.go"
-	handlerPrefixCHI = "github.com/zalora/doraemon/pkg/api"
+	handlerPrefixCHI = "github.com/zalora/doraemon/handlers/"
 )
 
 func generateChiDocs(curpath string) error {
@@ -108,7 +108,7 @@ func generateChiTags(node *ast.File, fset *token.FileSet) []swagger.Tag {
 	for line, route := range lineRouteMap {
 		tags = append(tags, swagger.Tag{
 			Name:        route,
-			Description: lineCommentMap[line-1],
+			Description: lineCommentMap[line-1] + "\n",
 		})
 	}
 
