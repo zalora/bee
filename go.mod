@@ -11,6 +11,7 @@ require (
 	github.com/lib/pq v1.7.0
 	github.com/rbretecher/go-postman-collection v0.9.0
 	github.com/smartystreets/goconvey v1.6.4
+	github.com/stretchr/testify v1.7.0
 	golang.org/x/mod v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
 )
