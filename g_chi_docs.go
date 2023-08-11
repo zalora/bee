@@ -106,9 +106,14 @@ func generateChiTags(node *ast.File, fset *token.FileSet) []swagger.Tag {
 
 	var tags []swagger.Tag
 	for line, route := range lineRouteMap {
+		comment, ok := lineCommentMap[line-1]
+		if !ok {
+			continue
+		}
+
 		tags = append(tags, swagger.Tag{
 			Name:        route,
-			Description: lineCommentMap[line-1] + "\n",
+			Description: comment + "\n",
 		})
 	}
 
