@@ -33,9 +33,12 @@ github.com/smartystreets/assertions/internal/oglematchers
 github.com/smartystreets/goconvey/convey
 github.com/smartystreets/goconvey/convey/gotest
 github.com/smartystreets/goconvey/convey/reporting
+# github.com/stretchr/objx v0.1.0
+github.com/stretchr/objx
 # github.com/stretchr/testify v1.7.0
 ## explicit
 github.com/stretchr/testify/assert
+github.com/stretchr/testify/mock
 # golang.org/x/mod v0.7.0
 ## explicit
 golang.org/x/mod/internal/lazyregexp

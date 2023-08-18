@@ -32,12 +32,24 @@ import (
 	"strings"
 	"unicode"
 
-	"golang.org/x/mod/modfile"
-	"gopkg.in/yaml.v3"
-
 	"github.com/astaxie/beego/swagger"
 	"github.com/astaxie/beego/utils"
+	"golang.org/x/mod/modfile"
+	"gopkg.in/yaml.v3"
 )
+
+// osGetter is a mockable interface to stub OS for unit testing.
+type osGetter interface {
+	Getwd() (dir string, err error)
+}
+
+type realOS struct{}
+
+var defaultOS osGetter = &realOS{}
+
+func (r *realOS) Getwd() (dir string, err error) {
+	return os.Getwd()
+}
 
 const (
 	ajson  = "application/json"
@@ -341,16 +353,13 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 		ColorLog("[ERRO] the %s pkg not exist in gopath\n", pkgpath)
 		os.Exit(1)
 	}
-	fileSet := token.NewFileSet()
-	astPkgs, err := parser.ParseDir(fileSet, pkgRealpath, func(info os.FileInfo) bool {
-		name := info.Name()
-		return !info.IsDir() && !strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".go")
-	}, parser.ParseComments)
 
+	astPkgs, err := getGoFilesInPackage(pkgRealpath)
 	if err != nil {
 		ColorLog("[ERRO] the %s pkg parser.ParseDir error\n", pkgpath)
 		os.Exit(1)
 	}
+
 	for _, pkg := range astPkgs {
 		for _, fl := range pkg.Files {
 			for _, d := range fl.Decls {
@@ -721,12 +730,7 @@ func getModel(str string) (objectname string, m swagger.Schema, realTypes []stri
 	pkgpath := strings.Join(strs[:len(strs)-1], "/")
 	curpath, _ := os.Getwd()
 	pkgRealpath := path.Join(curpath, pkgpath)
-	fileSet := token.NewFileSet()
-	astPkgs, err := parser.ParseDir(fileSet, pkgRealpath, func(info os.FileInfo) bool {
-		name := info.Name()
-		return !info.IsDir() && !strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".go")
-	}, parser.ParseComments)
-
+	astPkgs, err := getGoFilesInPackage(pkgRealpath)
 	if err != nil {
 		ColorLog("[ERRO] the model %s parser.ParseDir error\n", str)
 		os.Exit(1)
@@ -1243,6 +1247,39 @@ func generatePathInfo(file *ast.File) (map[string]string, error) {
 	}
 
 	return pathInfo, nil
+}
+
+func getGoFilesInPackage(pkg string) (map[string]*ast.Package, error) {
+	if isPackageIgnored(pkg) {
+		return nil, nil
+	}
+
+	fileSet := token.NewFileSet()
+	astPkgs, err := parser.ParseDir(fileSet, pkg, func(info os.FileInfo) bool {
+		name := info.Name()
+		return !info.IsDir() &&
+			strings.HasSuffix(name, ".go") &&
+			!strings.HasPrefix(name, ".")
+	}, parser.ParseComments)
+	if err != nil {
+		return nil, err
+	}
+
+	return astPkgs, nil
+}
+
+func isPackageIgnored(pkg string) bool {
+	curPath, err := defaultOS.Getwd()
+	if err != nil {
+		return false
+	}
+	handlersPath := path.Join(curPath, "/handlers")
+
+	if strings.HasPrefix(pkg, handlersPath) {
+		return true
+	}
+
+	return false
 }
 
 func getPackageName() (string, error) {
