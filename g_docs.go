@@ -38,19 +38,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// osGetter is a mockable interface to stub OS for unit testing.
-type osGetter interface {
-	Getwd() (dir string, err error)
-}
-
-type realOS struct{}
-
-var defaultOS osGetter = &realOS{}
-
-func (r *realOS) Getwd() (dir string, err error) {
-	return os.Getwd()
-}
-
 const (
 	ajson  = "application/json"
 	axml   = "application/xml"
@@ -1268,8 +1255,10 @@ func getGoFilesInPackage(pkg string) (map[string]*ast.Package, error) {
 	return astPkgs, nil
 }
 
+var getwd = os.Getwd
+
 func isPackageIgnored(pkg string) bool {
-	curPath, err := defaultOS.Getwd()
+	curPath, err := getwd()
 	if err != nil {
 		return false
 	}
