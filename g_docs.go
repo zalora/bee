@@ -305,14 +305,10 @@ func analisyscontrollerPkg(localName, pkgpath string) {
 		panic(fmt.Sprintf("could not get current working directory: %v", err))
 	}
 
-	pkgPathParts := strings.Split(pkgpath, string(os.PathSeparator))
-	if len(pkgPathParts) == 0 {
-		panic(fmt.Sprintf("invalid package path: %s", pkgpath))
+	project, err := getProjectFromImportPath(pkgpath)
+	if err != nil {
+		return
 	}
-
-	// Extract the project name from the package path.
-	// Assumption: package path has always the form github.com/<user>/<project>
-	project := pkgPathParts[2]
 
 	if !strings.Contains(wd, project) {
 		// If we dont find the project in the cwd, lets not generate docs for it.
@@ -1290,4 +1286,15 @@ func getPackageName() (string, error) {
 	gopathSRC := os.Getenv("GOPATH") + "/src/"
 
 	return strings.ReplaceAll(pwd, gopathSRC, ""), nil
+}
+
+// getProjectFromImportPath extracts the project name from the import path.
+// Assumption: package path has always the form github.com/<user>/<project>
+func getProjectFromImportPath(path string) (string, error) {
+	pathParts := strings.Split(path, string(os.PathSeparator))
+	if len(pathParts) < 3 {
+		return "", errors.New("unrecognized import path form")
+	}
+
+	return pathParts[2], nil
 }
