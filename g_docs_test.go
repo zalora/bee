@@ -100,3 +100,33 @@ func TestIsPackageIgnored(t *testing.T) {
 		})
 	}
 }
+
+func TestGetProjectFromImportPath(t *testing.T) {
+	tests := []struct {
+		desc     string
+		path     string
+		expected string
+		isError  assert.ErrorAssertionFunc
+	}{
+		{
+			desc:     "Input path is not an assumed path returns error",
+			path:     "go.uber.org/zap",
+			expected: "",
+			isError:  assert.Error,
+		},
+		{
+			desc:     "Input path is an assumed path returns the project name",
+			path:     "github.com/uber/zap",
+			expected: "zap",
+			isError:  assert.NoError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			actual, err := getProjectFromImportPath(tt.path)
+			assert.Equal(t, tt.expected, actual)
+			tt.isError(t, err)
+		})
+	}
+}
