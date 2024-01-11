@@ -1293,7 +1293,7 @@ func getPackageName() (string, error) {
 func getProjectFromImportPath(path string) (string, error) {
 	pathParts := strings.Split(path, string(os.PathSeparator))
 	if len(pathParts) < 3 {
-		return "", errors.New("unrecognized import path form")
+		return "", fmt.Errorf("unrecognized import path form: %s", path)
 	}
 
 	return pathParts[2], nil
