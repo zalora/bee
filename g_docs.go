@@ -627,8 +627,8 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 	return nil
 }
 
-func consumes(a string) []string {
-	switch a {
+func consumes(accept string) []string {
+	switch accept {
 	case "json":
 		return []string{ajson}
 	case "xml":
