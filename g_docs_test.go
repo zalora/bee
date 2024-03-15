@@ -11,6 +11,72 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestConsumes(t *testing.T) {
+	tests := []struct {
+		desc     string
+		a        string
+		expected []string
+	}{
+		{
+			desc:     "accept json, returns json",
+			a:        "json",
+			expected: []string{ajson},
+		},
+		{
+			desc:     "accept xml, returns xml",
+			a:        "xml",
+			expected: []string{axml},
+		},
+		{
+			desc:     "accept plain, returns plain",
+			a:        "plain",
+			expected: []string{aplain},
+		},
+		{
+			desc:     "accept html, returns html",
+			a:        "html",
+			expected: []string{ahtml},
+		},
+		{
+			desc:     "accept thrift_binary, returns thrift binary",
+			a:        "thrift_binary",
+			expected: []string{content_type_thrift_binary},
+		},
+		{
+			desc:     "accept thrift_json, returns thrift json",
+			a:        "thrift_json",
+			expected: []string{content_type_thrift_json},
+		},
+		{
+			desc:     "accept thrift_webcontent_binary, returns thrift web content binary",
+			a:        "thrift_webcontent_binary",
+			expected: []string{content_type_thrift_binary_webcontent_v1},
+		},
+		{
+			desc:     "accept thrift_webcontent_json, returns thrift web content json",
+			a:        "thrift_webcontent_json",
+			expected: []string{content_type_thrift_json_webcontent_v1},
+		},
+		{
+			desc:     "accept multipart, returns multipart/form-data",
+			a:        "form",
+			expected: []string{contentTypeMultipartFormData},
+		},
+		{
+			desc:     "unknown accept, returns empty slice",
+			a:        "skippy-chunky",
+			expected: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			actual := consumes(tt.a)
+			assert.Equal(t, tt.expected, actual)
+		})
+	}
+}
+
 func TestGetGoFilesInPackage(t *testing.T) {
 	tests := []struct {
 		desc      string

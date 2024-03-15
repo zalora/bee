@@ -43,7 +43,8 @@ const (
 	axml   = "application/xml"
 	aplain = "text/plain"
 	ahtml  = "text/html"
-	aform  = "multipart/form-data"
+
+	contentTypeMultipartFormData = "multipart/form-data"
 
 	content_type_thrift_binary_webcontent_v1 = "application/vnd.zalora.webcontent.v1+thrift.binary"
 	content_type_thrift_json_webcontent_v1   = "application/vnd.zalora.webcontent.v1+thrift.json"
@@ -589,35 +590,7 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 			} else if strings.HasPrefix(t, "@Accept") {
 				accepts := strings.Split(strings.TrimSpace(strings.TrimSpace(t[len("@Accept"):])), ",")
 				for _, a := range accepts {
-					switch a {
-					case "json":
-						opts.Consumes = append(opts.Consumes, ajson)
-						opts.Produces = append(opts.Produces, ajson)
-					case "xml":
-						opts.Consumes = append(opts.Consumes, axml)
-						opts.Produces = append(opts.Produces, axml)
-					case "plain":
-						opts.Consumes = append(opts.Consumes, aplain)
-						opts.Produces = append(opts.Produces, aplain)
-					case "html":
-						opts.Consumes = append(opts.Consumes, ahtml)
-						opts.Produces = append(opts.Produces, ahtml)
-					case "thrift_binary":
-						opts.Consumes = append(opts.Consumes, content_type_thrift_binary)
-						opts.Produces = append(opts.Produces, content_type_thrift_binary)
-					case "thrift_json":
-						opts.Consumes = append(opts.Consumes, content_type_thrift_json)
-						opts.Produces = append(opts.Produces, content_type_thrift_json)
-					case "thrift_webcontent_binary":
-						opts.Consumes = append(opts.Consumes, content_type_thrift_binary_webcontent_v1)
-						opts.Produces = append(opts.Produces, content_type_thrift_binary_webcontent_v1)
-					case "thrift_webcontent_json":
-						opts.Consumes = append(opts.Consumes, content_type_thrift_json_webcontent_v1)
-						opts.Produces = append(opts.Produces, content_type_thrift_json_webcontent_v1)
-					case "form":
-						opts.Consumes = append(opts.Consumes, aform)
-						opts.Produces = append(opts.Produces, aform)
-					}
+					opts.Consumes = append(opts.Consumes, consumes(a)...)
 				}
 			}
 		}
@@ -652,6 +625,31 @@ func parserComments(comments *ast.CommentGroup, funcName, controllerName, pkgpat
 	controllerList[pkgpath+controllerName][routerPath] = item
 
 	return nil
+}
+
+func consumes(accept string) []string {
+	switch accept {
+	case "json":
+		return []string{ajson}
+	case "xml":
+		return []string{axml}
+	case "plain":
+		return []string{aplain}
+	case "html":
+		return []string{ahtml}
+	case "thrift_binary":
+		return []string{content_type_thrift_binary}
+	case "thrift_json":
+		return []string{content_type_thrift_json}
+	case "thrift_webcontent_binary":
+		return []string{content_type_thrift_binary_webcontent_v1}
+	case "thrift_webcontent_json":
+		return []string{content_type_thrift_json_webcontent_v1}
+	case "form":
+		return []string{contentTypeMultipartFormData}
+	}
+
+	return []string{}
 }
 
 func enrichSwaggerItem(item *swagger.Item, opts swagger.Operation, httpMethod string) {
