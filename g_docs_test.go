@@ -59,13 +59,8 @@ func TestConsumes(t *testing.T) {
 		},
 		{
 			desc:     "accept multipart, returns multipart/form-data",
-			a:        "multipart",
-			expected: []string{contentTypeMultipartFormData},
-		},
-		{
-			desc:     "accept form, returns application/x-www-form-urlencoded",
 			a:        "form",
-			expected: []string{contentTypeFormURLEncoded},
+			expected: []string{contentTypeMultipartFormData},
 		},
 		{
 			desc:     "unknown accept, returns empty slice",
