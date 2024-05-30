@@ -25,6 +25,10 @@ var (
 			Key:   "Content-Language",
 			Value: "{{DOR_CONTENT_LANGUAGE}}",
 		},
+		{
+			Key:   "User-Agent",
+			Value: "{{CLIENT_USER_AGENT}}",
+		},
 	}
 )
 
