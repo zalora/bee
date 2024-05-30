@@ -27,7 +27,7 @@ var (
 		},
 		{
 			Key:   "User-Agent",
-			Value: "{{CLIENT_USER_AGENT}}",
+			Value: "{{DOR_USER_AGENT}}",
 		},
 	}
 )
