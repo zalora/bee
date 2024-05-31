@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path"
 	"sort"
@@ -176,9 +175,8 @@ func addItemToCollection(url string, collection *postman.Items, op *swagger.Oper
 		})
 	}
 
-	name := fmt.Sprintf("%s %s", method, url)
 	collection.AddItem(postman.CreateItem(postman.Item{
-		Name:        name,
+		Name:        string(method) + " " + url,
 		Description: op.Description,
 		ID:          op.OperationID,
 		Request: &postman.Request{
