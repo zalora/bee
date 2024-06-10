@@ -24,6 +24,10 @@ var (
 			Key:   "Content-Language",
 			Value: "{{DOR_CONTENT_LANGUAGE}}",
 		},
+		{
+			Key:   "User-Agent",
+			Value: "{{DOR_USER_AGENT}}",
+		},
 	}
 )
 
@@ -171,12 +175,8 @@ func addItemToCollection(url string, collection *postman.Items, op *swagger.Oper
 		})
 	}
 
-	name := op.OperationID
-	if opIDs := strings.Split(op.OperationID, "."); len(opIDs) > 1 {
-		name = opIDs[1]
-	}
 	collection.AddItem(postman.CreateItem(postman.Item{
-		Name:        name,
+		Name:        string(method) + " " + url,
 		Description: op.Description,
 		ID:          op.OperationID,
 		Request: &postman.Request{
