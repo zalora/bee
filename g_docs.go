@@ -45,6 +45,7 @@ const (
 	ahtml  = "text/html"
 
 	contentTypeMultipartFormData = "multipart/form-data"
+	contentTypeFormUrlencoded    = "application/x-www-form-urlencoded"
 
 	content_type_thrift_binary_webcontent_v1 = "application/vnd.zalora.webcontent.v1+thrift.binary"
 	content_type_thrift_json_webcontent_v1   = "application/vnd.zalora.webcontent.v1+thrift.json"
@@ -645,8 +646,10 @@ func consumes(accept string) []string {
 		return []string{content_type_thrift_binary_webcontent_v1}
 	case "thrift_webcontent_json":
 		return []string{content_type_thrift_json_webcontent_v1}
-	case "form":
+	case "form", "multipart/form-data":
 		return []string{contentTypeMultipartFormData}
+	case "application/x-www-form-urlencoded":
+		return []string{contentTypeFormUrlencoded}
 	}
 
 	return []string{}
